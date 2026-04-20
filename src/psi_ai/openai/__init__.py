@@ -1,19 +1,26 @@
 """Psi AI OpenAI - LLM Caller that exposes OpenAI-compatible API via Unix socket."""
 
-import argparse
 import asyncio
 import json
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import tyro
 from loguru import logger
 from openai import AsyncOpenAI
+
+from psi_common import LLMRequest, LLMResponse
 
 
 class AICaller:
     """LLM Caller that forwards requests to OpenAI-compatible APIs."""
+
+    socket_path: str
+    client: AsyncOpenAI
+    model: str
 
     def __init__(
         self,
@@ -31,18 +38,20 @@ class AICaller:
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle a single client connection."""
+        request_id: str = "unknown"
         try:
             data = await reader.readline()
             if not data:
                 logger.debug("Empty request received")
                 return
 
-            request = json.loads(data.decode())
-            request_id = request.get("id", "unknown")
-            messages = request.get("messages", [])
-            tools = request.get("tools")
-            tool_choice = request.get("tool_choice", "auto")
-            stream = request.get("stream", True)
+            request_data = json.loads(data.decode())
+            request = LLMRequest.model_validate(request_data)
+            request_id = request.id
+            messages = request.messages
+            tools = request.tools
+            tool_choice = request.tool_choice
+            stream = request.stream
 
             logger.info(f"Request received | id={request_id} | stream={stream} | message_count={len(messages)}")
             logger.debug(f"Request details | has_tools={tools is not None} | tool_choice={tool_choice}")
@@ -58,7 +67,7 @@ class AICaller:
                 logger.debug(f"Connection closed by client | error={e}")
                 return
             logger.error(f"Request handling error | error={e}")
-            error_response = {"id": request.get("id", "error"), "error": error_str}
+            error_response = {"id": request_id, "error": error_str}
             writer.write((json.dumps(error_response) + "\n").encode())
             await writer.drain()
 
@@ -96,12 +105,13 @@ class AICaller:
             async for chunk in stream:
                 chunk_count += 1
                 chunk_data = chunk.model_dump()
-                response = {"id": request_id, "choices": chunk_data.get("choices", [])}
-                writer.write((json.dumps(response) + "\n").encode())
+                response = LLMResponse(id=request_id, choices=chunk_data.get("choices", []))
+                writer.write((response.model_dump_json() + "\n").encode())
                 await writer.drain()
 
             # Send done marker
-            writer.write((json.dumps({"id": request_id, "done": True}) + "\n").encode())
+            done_response = LLMResponse(id=request_id, choices=[], done=True)
+            writer.write((done_response.model_dump_json() + "\n").encode())
             await writer.drain()
 
             logger.info(f"Stream complete | request_id={request_id} | chunks={chunk_count}")
@@ -162,38 +172,81 @@ class AICaller:
             await server.serve_forever()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Psi AI OpenAI - LLM Caller")
-    parser.add_argument("--socket", required=True, help="Unix socket path")
-    parser.add_argument("--provider", default="openai", help="LLM provider (for logging)")
-    parser.add_argument("--model", required=True, help="Model name")
-    parser.add_argument("--api-key", help="API key (or set API_KEY env var)")
-    parser.add_argument("--base-url", default="https://api.openai.com/v1", help="API base URL")
-    parser.add_argument("--log-level", default="INFO", help="Log level (DEBUG, INFO, WARNING, ERROR)")
-    args = parser.parse_args()
+async def run_ai(
+    socket_path: str,
+    model: str,
+    api_key: str,
+    base_url: str = "https://api.openai.com/v1",
+    log_level: str = "INFO",
+) -> None:
+    """Python function interface to run the AI caller.
 
-    # Configure logger
+    Args:
+        socket_path: Unix socket path to listen on
+        model: Model name to use
+        api_key: API key for the LLM provider
+        base_url: API base URL
+        log_level: Log level (DEBUG, INFO, WARNING, ERROR)
+    """
+    _setup_logger(log_level)
+    caller = AICaller(
+        socket_path=socket_path,
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+    )
+    await caller.run()
+
+
+def _setup_logger(log_level: str) -> None:
+    """Configure logger."""
     logger.remove()
     logger.add(
         lambda msg: print(msg, end=""),
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>ai-openai</cyan> | {message}",
-        level=args.log_level,
+        level=log_level,
     )
+
+
+@dataclass
+class CliArgs:
+    """AI Caller CLI arguments."""
+
+    socket: str
+    """Unix socket path to listen on"""
+
+    model: str
+    """Model name to use"""
+
+    api_key: str | None = None
+    """API key (or set API_KEY env var)"""
+
+    base_url: str = "https://api.openai.com/v1"
+    """API base URL"""
+
+    log_level: str = "INFO"
+    """Log level (DEBUG, INFO, WARNING, ERROR)"""
+
+
+def main() -> None:
+    args = tyro.cli(CliArgs)
 
     api_key = args.api_key or os.environ.get("API_KEY")
     if not api_key:
+        _setup_logger(args.log_level)
         logger.error("API key required via --api-key or API_KEY env var")
         print("Error: API key required via --api-key or API_KEY env var", file=sys.stderr)
         sys.exit(1)
 
-    caller = AICaller(
-        socket_path=args.socket,
-        api_key=api_key,
-        base_url=args.base_url,
-        model=args.model,
+    asyncio.run(
+        run_ai(
+            socket_path=args.socket,
+            model=args.model,
+            api_key=api_key,
+            base_url=args.base_url,
+            log_level=args.log_level,
+        )
     )
-
-    asyncio.run(caller.run())
 
 
 if __name__ == "__main__":

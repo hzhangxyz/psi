@@ -1,13 +1,15 @@
 """Read file tool."""
 
-async def run(params: dict, workspace_path: str) -> dict:
+from pathlib import Path
+from typing import Any
+
+
+async def run(params: dict[str, Any], workspace_path: str) -> dict[str, Any]:
     """Read a file from the workspace.
 
     Args:
         path: Relative path to the file in workspace.
     """
-    from pathlib import Path
-
     path = params.get("path", "")
     if not path:
         return {"success": False, "error": "path parameter required"}

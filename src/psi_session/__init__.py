@@ -1,20 +1,64 @@
 """Psi Session - Core ReAct loop engine."""
 
-import argparse
 import asyncio
 import importlib.util
 import inspect
 import json
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import aiosqlite
+import tyro
 from loguru import logger
+from pydantic import BaseModel
+
+from psi_common import LLMRequest, ToolResult
+
+
+class SessionConfig(BaseModel):
+    """Session configuration."""
+
+    workspace_path: str
+    channel_socket: str
+    llm_socket: str
+    session_id: str = "default"
+    db_path: str | None = None
+    max_iterations: int = 10
+
+
+class ToolCall(BaseModel):
+    """OpenAI tool call structure."""
+
+    id: str
+    type: str = "function"
+    function: dict[str, Any]
+
+
+class Message(BaseModel):
+    """Chat message."""
+
+    role: str
+    content: str | None = None
+    tool_calls: list[ToolCall] | None = None
+    tool_call_id: str | None = None
 
 
 class Session:
     """Core session that runs the ReAct loop."""
+
+    workspace_path: Path
+    channel_socket: str
+    llm_socket: str
+    session_id: str
+    db_path: str
+    messages: list[dict[str, Any]]
+    tools: dict[str, Callable[..., Awaitable[dict[str, Any]]]]
+    tools_schema: list[dict[str, Any]]
+    skills_index: list[dict[str, str]]
+    max_iterations: int
 
     def __init__(
         self,
@@ -30,13 +74,15 @@ class Session:
         self.session_id = session_id or "default"
         self.db_path = db_path or str(self.workspace_path / "state" / f"session-{self.session_id}.db")
         self.messages: list[dict[str, Any]] = []
-        self.tools: dict[str, Callable] = {}
+        self.tools: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {}
         self.tools_schema: list[dict[str, Any]] = []
         self.skills_index: list[dict[str, str]] = []
         self.max_iterations = 10
 
         logger.info(f"Session initialized | id={self.session_id} | workspace={self.workspace_path}")
-        logger.debug(f"Session config | channel_socket={self.channel_socket} | llm_socket={self.llm_socket} | db={self.db_path}")
+        logger.debug(
+            f"Session config | channel_socket={self.channel_socket} | llm_socket={self.llm_socket} | db={self.db_path}"
+        )
 
     async def init_db(self) -> None:
         """Initialize SQLite database for message history."""
@@ -84,15 +130,18 @@ class Session:
         """Save a message to database."""
         async with aiosqlite.connect(self.db_path) as db:
             tool_calls_json = json.dumps(message.get("tool_calls")) if message.get("tool_calls") else None
-            await db.execute("""
+            await db.execute(
+                """
                 INSERT INTO messages (role, content, tool_calls, tool_call_id)
                 VALUES (?, ?, ?, ?)
-            """, (
-                message["role"],
-                message.get("content"),
-                tool_calls_json,
-                message.get("tool_call_id"),
-            ))
+            """,
+                (
+                    message["role"],
+                    message.get("content"),
+                    tool_calls_json,
+                    message.get("tool_call_id"),
+                ),
+            )
             await db.commit()
 
         logger.debug(f"Message saved | role={message['role']} | has_tool_calls={message.get('tool_calls') is not None}")
@@ -116,7 +165,7 @@ class Session:
 
         logger.info(f"Tools loaded | count={len(self.tools)} | names={list(self.tools.keys())}")
 
-    def _generate_tool_schema(self, name: str, func: Callable) -> dict[str, Any]:
+    def _generate_tool_schema(self, name: str, func: Callable[..., Awaitable[dict[str, Any]]]) -> dict[str, Any]:
         """Generate OpenAI-compatible tool schema from function signature."""
         sig = inspect.signature(func)
         doc = inspect.getdoc(func) or ""
@@ -132,11 +181,11 @@ class Session:
             if param.annotation != inspect.Parameter.empty:
                 if param.annotation in (int, float):
                     param_type = "number"
-                elif param.annotation == bool:
+                elif param.annotation is bool:
                     param_type = "boolean"
-                elif param.annotation == list:
+                elif param.annotation is list:
                     param_type = "array"
-                elif param.annotation == dict:
+                elif param.annotation is dict:
                     param_type = "object"
 
             properties[param_name] = {"type": param_type}
@@ -176,15 +225,17 @@ class Session:
                         parts = content.split("---")
                         if len(parts) >= 3:
                             frontmatter = parts[1]
-                            metadata = {}
+                            metadata: dict[str, str] = {}
                             for line in frontmatter.strip().split("\n"):
                                 if ":" in line:
                                     key, value = line.split(":", 1)
                                     metadata[key.strip()] = value.strip()
-                            self.skills_index.append({
-                                "name": metadata.get("name", skill_dir.name),
-                                "description": metadata.get("description", ""),
-                            })
+                            self.skills_index.append(
+                                {
+                                    "name": metadata.get("name", skill_dir.name),
+                                    "description": metadata.get("description", ""),
+                                }
+                            )
                             logger.debug(f"Skill loaded | name={metadata.get('name', skill_dir.name)}")
 
         logger.info(f"Skills loaded | count={len(self.skills_index)}")
@@ -210,7 +261,7 @@ class Session:
                     return prompt
 
         # Default implementation
-        parts = []
+        parts: list[str] = []
         agent_md = self.workspace_path / "AGENT.md"
         if agent_md.exists():
             parts.append(agent_md.read_text())
@@ -255,17 +306,17 @@ class Session:
             reader, writer = await asyncio.open_unix_connection(self.llm_socket)
             logger.debug(f"Connected to LLM socket | path={self.llm_socket}")
 
-            request = {
-                "id": f"req-{len(self.messages)}",
-                "messages": filtered_messages,
-                "tools": self.tools_schema,
-                "tool_choice": "auto",
-                "stream": stream,
-            }
+            request = LLMRequest(
+                id=f"req-{len(self.messages)}",
+                messages=filtered_messages,
+                tools=self.tools_schema,
+                tool_choice="auto",
+                stream=stream,
+            )
 
-            writer.write((json.dumps(request) + "\n").encode())
+            writer.write((request.model_dump_json() + "\n").encode())
             await writer.drain()
-            logger.debug(f"Request sent | id={request['id']}")
+            logger.debug(f"Request sent | id={request.id}")
 
             if stream:
                 result = await self._read_stream_response(reader, writer)
@@ -287,15 +338,15 @@ class Session:
 
     def _filter_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Filter out invalid tool_calls from messages."""
-        filtered = []
+        filtered: list[dict[str, Any]] = []
         for msg in messages:
             if msg.get("role") == "assistant" and msg.get("tool_calls"):
                 # Check if tool_calls have valid names
-                valid_tool_calls = []
+                valid_tool_calls: list[dict[str, Any]] = []
                 for tc in msg["tool_calls"]:
                     func = tc.get("function", {})
                     name = func.get("name")
-                    if name and name != "None" and not name.startswith("\x00"):
+                    if name and name != "None" and not str(name).startswith("\x00"):
                         valid_tool_calls.append(tc)
                     else:
                         logger.warning(f"Filtered invalid tool_call | name={name}")
@@ -309,7 +360,6 @@ class Session:
                         filtered.append({"role": "assistant", "content": msg["content"]})
             elif msg.get("role") == "tool":
                 # Keep tool messages only if previous assistant had valid tool_calls
-                # This is handled by checking the previous message
                 filtered.append(msg)
             else:
                 filtered.append(msg)
@@ -350,19 +400,21 @@ class Session:
                         for tc_delta in tc_list:
                             idx = tc_delta.get("index", 0)
                             while idx >= len(tool_calls):
-                                tool_calls.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
-                            if "id" in tc_delta and tc_delta["id"]:
-                                tool_calls[idx]["id"] = tc_delta["id"]
-                            if "function" in tc_delta:
-                                func = tc_delta["function"]
-                                if func is None:
-                                    continue
-                                name = func.get("name")
-                                if name and name != "null":
-                                    tool_calls[idx]["function"]["name"] = name
-                                args = func.get("arguments")
-                                if args:
-                                    tool_calls[idx]["function"]["arguments"] += args
+                                tool_calls.append(
+                                    {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+                                )
+                            tc_id = tc_delta.get("id")
+                            if tc_id:
+                                tool_calls[idx]["id"] = tc_id
+                            func = tc_delta.get("function")
+                            if func is None:
+                                continue
+                            name = func.get("name")
+                            if name and name != "null":
+                                tool_calls[idx]["function"]["name"] = name
+                            args = func.get("arguments")
+                            if args:
+                                tool_calls[idx]["function"]["arguments"] += args
 
             logger.debug(f"Stream complete | chunks={chunk_count} | content_length={len(final_message['content'])}")
 
@@ -378,7 +430,7 @@ class Session:
 
         if tool_calls:
             # Filter out invalid tool_calls (empty name)
-            valid_tool_calls = []
+            valid_tool_calls: list[dict[str, Any]] = []
             for tc in tool_calls:
                 name = tc.get("function", {}).get("name", "")
                 if name and name != "null" and name != "None":
@@ -403,15 +455,17 @@ class Session:
 
         if tool_name not in self.tools:
             logger.error(f"Tool not found | name={tool_name}")
-            return {"success": False, "error": f"Tool '{tool_name}' not found"}
+            return ToolResult(success=False, error=f"Tool '{tool_name}' not found").model_dump()
 
         try:
             result = await self.tools[tool_name](params, str(self.workspace_path))
-            logger.debug(f"Tool result | success={result.get('success')} | has_content={result.get('content') is not None}")
+            logger.debug(
+                f"Tool result | success={result.get('success')} | has_content={result.get('content') is not None}"
+            )
             return result
         except Exception as e:
             logger.error(f"Tool execution error | name={tool_name} | error={e}")
-            return {"success": False, "error": str(e)}
+            return ToolResult(success=False, error=str(e)).model_dump()
 
     async def run_react_loop(self, user_message: dict[str, Any]) -> str:
         """Run ReAct loop for a user message."""
@@ -530,31 +584,73 @@ class Session:
             await server.serve_forever()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Psi Session")
-    parser.add_argument("--workspace", required=True, help="Workspace directory path")
-    parser.add_argument("--channel-socket", required=True, help="Unix socket for channel")
-    parser.add_argument("--llm-socket", required=True, help="Unix socket for LLM caller")
-    parser.add_argument("--session-id", default=None, help="Session ID (for multi-session)")
-    parser.add_argument("--log-level", default="INFO", help="Log level (DEBUG, INFO, WARNING, ERROR)")
-    args = parser.parse_args()
+async def run_session(
+    workspace_path: str,
+    channel_socket: str,
+    llm_socket: str,
+    session_id: str | None = None,
+    log_level: str = "INFO",
+) -> None:
+    """Python function interface to run a session.
 
-    # Configure logger
+    Args:
+        workspace_path: Path to workspace directory
+        channel_socket: Unix socket path for channel connections
+        llm_socket: Unix socket path for LLM caller
+        session_id: Optional session identifier
+        log_level: Log level (DEBUG, INFO, WARNING, ERROR)
+    """
+    _setup_logger(log_level)
+    session = Session(
+        workspace_path=workspace_path,
+        channel_socket=channel_socket,
+        llm_socket=llm_socket,
+        session_id=session_id,
+    )
+    await session.run()
+
+
+def _setup_logger(log_level: str) -> None:
+    """Configure logger."""
     logger.remove()
     logger.add(
         lambda msg: print(msg, end=""),
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>session</cyan> | {message}",
-        level=args.log_level,
+        level=log_level,
     )
 
-    session = Session(
-        workspace_path=args.workspace,
-        channel_socket=args.channel_socket,
-        llm_socket=args.llm_socket,
-        session_id=args.session_id,
-    )
 
-    asyncio.run(session.run())
+@dataclass
+class CliArgs:
+    """Session CLI arguments."""
+
+    workspace: str
+    """Workspace directory path"""
+
+    channel_socket: str
+    """Unix socket for channel connections"""
+
+    llm_socket: str
+    """Unix socket for LLM caller"""
+
+    session_id: str | None = None
+    """Session ID (for multi-session support)"""
+
+    log_level: str = "INFO"
+    """Log level (DEBUG, INFO, WARNING, ERROR)"""
+
+
+def main() -> None:
+    args = tyro.cli(CliArgs)
+    asyncio.run(
+        run_session(
+            workspace_path=args.workspace,
+            channel_socket=args.channel_socket,
+            llm_socket=args.llm_socket,
+            session_id=args.session_id,
+            log_level=args.log_level,
+        )
+    )
 
 
 if __name__ == "__main__":

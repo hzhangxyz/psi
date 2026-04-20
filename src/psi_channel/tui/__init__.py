@@ -1,80 +1,48 @@
 """Psi Channel - TUI interface for user interaction."""
 
-import argparse
 import asyncio
 import json
 import sys
-from pathlib import Path
+from dataclasses import dataclass
 
-try:
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.styles import Style
-    HAS_PROMPT_TOOLKIT = True
-except ImportError:
-    HAS_PROMPT_TOOLKIT = False
+import tyro
+from loguru import logger
+from prompt_toolkit import PromptSession
+from prompt_toolkit.styles import Style
 
 
 class Channel:
     """Terminal UI channel for user interaction."""
 
+    session_socket: str
+
     def __init__(self, session_socket: str) -> None:
         self.session_socket = session_socket
+        logger.debug(f"Channel initialized | socket={session_socket}")
 
-    async def run_simple(self) -> None:
-        """Simple readline-based interface."""
+    async def run(self) -> None:
+        """Run the TUI interface."""
+        logger.info(f"Connecting to session at {self.session_socket}")
         print(f"Connecting to session at {self.session_socket}", file=sys.stderr)
 
         reader, writer = await asyncio.open_unix_connection(self.session_socket)
+        logger.info("Connected to session")
 
-        print("Connected. Type your message and press Enter.")
+        style = Style.from_dict(
+            {
+                "user": "#ansigreen",
+                "assistant": "#ansicyan",
+            }
+        )
 
-        while True:
-            try:
-                user_input = input("You: ")
-                if not user_input:
-                    continue
-
-                # Send to session
-                message = {"role": "user", "content": user_input}
-                writer.write((json.dumps(message) + "\n").encode())
-                await writer.drain()
-
-                # Read response
-                data = await reader.readline()
-                if not data:
-                    print("Session disconnected.")
-                    break
-
-                response = json.loads(data.decode())
-                print(f"Assistant: {response.get('content', '')}")
-
-            except EOFError:
-                break
-            except KeyboardInterrupt:
-                print("\nExiting...")
-                break
-
-        writer.close()
-        await writer.wait_closed()
-
-    async def run_prompt_toolkit(self) -> None:
-        """prompt_toolkit-based interface with colors."""
-        print(f"Connecting to session at {self.session_socket}", file=sys.stderr)
-
-        reader, writer = await asyncio.open_unix_connection(self.session_socket)
-
-        style = Style.from_dict({
-            "user": "#ansigreen",
-            "assistant": "#ansicyan",
-        })
-
-        session = PromptSession(style=style)
+        session: PromptSession[str] = PromptSession(style=style)
 
         print("Connected. Ctrl+C to exit.")
 
         while True:
             try:
                 user_input = await session.prompt_async("You: ", style=style)
+                logger.debug(f"User input received | length={len(user_input)}")
 
                 if not user_input:
                     continue
@@ -82,39 +50,67 @@ class Channel:
                 message = {"role": "user", "content": user_input}
                 writer.write((json.dumps(message) + "\n").encode())
                 await writer.drain()
+                logger.debug(f"Message sent to session | content={user_input[:50]}")
 
                 data = await reader.readline()
                 if not data:
+                    logger.warning("Session disconnected")
                     print("Session disconnected.")
                     break
 
                 response = json.loads(data.decode())
+                logger.debug(f"Response received | length={len(response.get('content', ''))}")
                 print(f"Assistant: {response.get('content', '')}")
 
             except KeyboardInterrupt:
+                logger.info("User interrupted with Ctrl+C")
                 print("\nExiting...")
                 break
             except EOFError:
+                logger.info("EOF received")
                 break
 
         writer.close()
         await writer.wait_closed()
+        logger.info("Channel closed")
 
-    async def run(self) -> None:
-        """Run the channel interface."""
-        if HAS_PROMPT_TOOLKIT:
-            await self.run_prompt_toolkit()
-        else:
-            await self.run_simple()
+
+async def run_channel(session_socket: str, log_level: str = "WARNING") -> None:
+    """Python function interface to run the TUI channel.
+
+    Args:
+        session_socket: Unix socket path for session connection
+        log_level: Log level (DEBUG, INFO, WARNING, ERROR). Default WARNING to not show logs in TUI.
+    """
+    _setup_logger(log_level)
+    channel = Channel(session_socket=session_socket)
+    await channel.run()
+
+
+def _setup_logger(log_level: str) -> None:
+    """Configure logger."""
+    logger.remove()
+    logger.add(
+        lambda msg: print(msg, end=""),
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>channel-tui</cyan> | {message}",
+        level=log_level,
+    )
+
+
+@dataclass
+class CliArgs:
+    """Channel TUI CLI arguments."""
+
+    session_socket: str
+    """Unix socket path for session connection"""
+
+    log_level: str = "WARNING"
+    """Log level (DEBUG, INFO, WARNING, ERROR). Default WARNING to not show logs in TUI"""
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Psi Channel - TUI interface")
-    parser.add_argument("--session-socket", required=True, help="Unix socket path for session")
-    args = parser.parse_args()
-
-    channel = Channel(session_socket=args.session_socket)
-    asyncio.run(channel.run())
+    args = tyro.cli(CliArgs)
+    asyncio.run(run_channel(session_socket=args.session_socket, log_level=args.log_level))
 
 
 if __name__ == "__main__":

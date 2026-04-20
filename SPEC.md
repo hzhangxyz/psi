@@ -11,7 +11,13 @@
 - **psi-channel-tui**：TUI 用户交互界面。
 - **psi-workspace**：SquashFS/OverlayFS 管理器，负责镜像挂载和快照。
 
-**Let it crash**：组件出错时不做复杂恢复，让进程崩溃。简化实现，依赖外部重启机制。
+**Let it crash**：组件出错时不做复杂恢复，让进程崩溃。简化实现，依赖外部重启机制。不检查依赖是否存在（如 prompt_toolkit），缺失时直接报错退出。
+
+**Python API**：所有模块同时提供 CLI 和 Python function 接口：
+- `run_session()` - 启动 session
+- `run_ai()` - 启动 AI caller
+- `run_channel()` - 运行 TUI channel
+- `run_mount()`, `run_unmount()`, `run_snapshot()`, `run_list()` - workspace 管理
 
 ## 2. 模块详细定义
 
@@ -278,11 +284,132 @@ manifest.json：
 
 可通过 `--log-level DEBUG/INFO/WARNING/ERROR` 控制日志级别。
 
-## 11. 依赖
+## 11. 数据模型
 
+所有模块使用 pydantic BaseModel 定义数据结构：
+
+```python
+from pydantic import BaseModel
+
+class LLMRequest(BaseModel):
+    id: str
+    messages: list[dict[str, Any]]
+    tools: list[dict[str, Any]] | None = None
+    stream: bool = True
+```
+
+主要模型：
+- `LLMRequest`/`LLMResponse`: LLM 通信协议（统一定义于 `psi_common`）
+- `ToolResult`: 工具执行结果
+- `UserMessage`/`AssistantMessage`: 用户/助手消息
+- `SnapshotEntry`/`Manifest`: 快照元数据
+
+## 12. 异步实现
+
+所有 I/O 操作使用异步实现：
+- SQLite: `aiosqlite`
+- Socket 通信: `asyncio.start_unix_server` / `asyncio.open_unix_connection`
+- Workspace mount/umount/mksquashfs: `asyncio.create_subprocess_exec`
+
+不使用同步阻塞操作。
+
+## 13. Python API
+
+所有模块提供 Python function 接口（除 CLI 外）：
+
+```python
+from psi_session import run_session
+from psi_ai.openai import run_ai
+from psi_channel.tui import run_channel
+from psi_workspace import run_mount, run_unmount, run_snapshot, run_list
+
+# 使用示例
+async def main():
+    await run_ai(socket="./ai.sock", model="gpt-4o", api_key="...", base_url="...")
+    await run_session(workspace="./workspace", channel_socket="./channel.sock", llm_socket="./ai.sock")
+    await run_channel(session_socket="./channel.sock")
+```
+
+## 14. 测试
+
+使用 pytest 和 pytest-asyncio：
+
+```bash
+uv run pytest tests/ -v
+```
+
+测试覆盖：
+- 协议模型测试 (`test_protocol.py`)
+- Session 核心逻辑测试 (`test_session.py`)
+- Workspace 管理器测试 (`test_workspace.py`)
+
+GitHub Actions 自动测试配置见 `.github/workflows/test.yml`，在 push 和 PR 时自动运行 lint、类型检查和测试。
+
+## 15. 代码质量
+
+使用 ruff 进行 lint 和格式化：
+
+```bash
+uv run ruff check examples/ tests/ src/
+uv run ruff check --fix examples/ tests/ src/
+uv run ruff format examples/ tests/ src/ --check
+```
+
+使用 ty 进行类型检查：
+
+```bash
+uv run ty check examples/ tests/ src/
+```
+
+配置见 `pyproject.toml`。
+
+## 16. CLI 实现
+
+所有 CLI 使用 tyro 实现，参数通过 dataclass 定义：
+
+```python
+from dataclasses import dataclass
+import tyro
+
+@dataclass
+class CliArgs:
+    workspace: str
+    """Workspace directory path"""
+    log_level: str = "INFO"
+    """Log level (DEBUG, INFO, WARNING, ERROR)"""
+
+def main() -> None:
+    args = tyro.cli(CliArgs)
+    ...
+```
+
+## 17. 日志
+
+所有模块（包括 psi-channel-tui）使用 loguru 统一日志：
+
+```
+2026-04-20 18:03:42 | INFO | session | Session initialized | id=test | workspace=/path
+```
+
+格式：`时间 | 级别 | 模块名 | 消息 | 键值对`
+
+可通过 `--log-level DEBUG/INFO/WARNING/ERROR` 控制日志级别。
+
+**psi-channel-tui 特殊处理**：默认日志级别为 `WARNING`，避免在 TUI 界面显示日志干扰用户体验。
+
+## 18. 依赖
+
+运行依赖：
 - Python 3.10+
 - openai（SDK）
 - aiosqlite（异步 SQLite）
 - prompt-toolkit（TUI）
 - loguru（日志）
-- SquashFS/OverlayFS（系统支持）
+- pydantic（数据模型）
+- tyro（CLI）
+
+开发依赖：
+- ruff（lint/格式化）
+- basedpyright（类型检查）
+- pytest（测试框架）
+- pytest-asyncio（异步测试）

@@ -1,5 +1,5 @@
 """Psi common utilities."""
 
-from .protocol import LLMRequest, LLMResponse
+from .protocol import AssistantMessage, LLMRequest, LLMResponse, ToolResult, UserMessage
 
-__all__ = ["LLMRequest", "LLMResponse"]
+__all__ = ["LLMRequest", "LLMResponse", "ToolResult", "UserMessage", "AssistantMessage"]

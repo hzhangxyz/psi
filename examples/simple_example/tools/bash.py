@@ -1,9 +1,10 @@
 """Bash tool - execute shell commands."""
 
-import subprocess
+import asyncio
+from typing import Any
 
 
-async def run(params: dict, workspace_path: str) -> dict:
+async def run(params: dict[str, Any], workspace_path: str) -> dict[str, Any]:
     """Execute a shell command.
 
     Args:
@@ -14,18 +15,18 @@ async def run(params: dict, workspace_path: str) -> dict:
         return {"success": False, "error": "command parameter required"}
 
     try:
-        result = subprocess.run(
+        proc = await asyncio.create_subprocess_shell(
             command,
-            shell=True,
-            capture_output=True,
-            text=True,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             cwd=workspace_path,
         )
+        stdout, stderr = await proc.communicate()
         return {
             "success": True,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "returncode": result.returncode,
+            "stdout": stdout.decode() if stdout else "",
+            "stderr": stderr.decode() if stderr else "",
+            "returncode": proc.returncode or 0,
         }
     except Exception as e:
         return {"success": False, "error": str(e)}

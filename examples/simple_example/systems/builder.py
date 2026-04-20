@@ -1,6 +1,9 @@
 """System prompt builder."""
 
-async def build_system_prompt(context: dict) -> str:
+from typing import Any
+
+
+async def build_system_prompt(context: dict[str, Any]) -> str:
     """Build system prompt from context."""
     workspace_path = context["workspace_path"]
     skills_index = context["skills_index"]
@@ -8,7 +11,7 @@ async def build_system_prompt(context: dict) -> str:
 
     from pathlib import Path
 
-    parts = []
+    parts: list[str] = []
 
     # Read AGENT.md
     agent_md = Path(workspace_path) / "AGENT.md"
@@ -28,7 +31,7 @@ async def build_system_prompt(context: dict) -> str:
     return "\n".join(parts)
 
 
-async def trim_history(messages: list, _limit: int) -> list:
+async def trim_history(messages: list[dict[str, Any]], _limit: int) -> list[dict[str, Any]]:
     """Trim history if it exceeds limit (simple truncation).
 
     Note: This example implementation uses message count approximation.
@@ -38,5 +41,5 @@ async def trim_history(messages: list, _limit: int) -> list:
     max_messages = 20  # Approximate: assume ~500 tokens per message
     if len(messages) > max_messages:
         # Keep first message (usually important) and last N-1
-        return messages[:1] + messages[-(max_messages-1):]
+        return messages[:1] + messages[-(max_messages - 1) :]
     return messages

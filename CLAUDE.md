@@ -67,12 +67,42 @@ Session 接收用户消息后：
 
 ## 日志
 
-除 TUI 外，所有模块使用 loguru：
+所有模块使用 loguru：
 ```
 2026-04-20 18:03:42 | INFO | session | Session initialized | id=test
 ```
 
 控制级别：`--log-level DEBUG/INFO/WARNING/ERROR`
+
+**TUI 特殊处理**：默认 `WARNING` 级别，避免日志干扰界面。
+
+## 数据模型
+
+使用 pydantic BaseModel：
+- `LLMRequest`/`LLMResponse`: LLM 通信
+- `ToolResult`: 工具结果
+- `SnapshotEntry`/`Manifest`: 快照元数据
+
+## 开发
+
+```bash
+# Lint 检查
+uv run ruff check examples/ tests/ src/
+uv run ruff check --fix examples/ tests/ src/
+
+# 格式检查
+uv run ruff format examples/ tests/ src/ --check
+
+# 类型检查
+uv run ty check examples/ tests/ src/
+
+# 测试
+uv run pytest tests/ -v
+```
+
+**CI/CD**: GitHub Actions 自动运行 ruff check、ruff format、ty 和测试（`.github/workflows/test.yml`）。
+
+**CLI**: 所有命令使用 tyro 实现，参数通过 dataclass 定义。
 
 ## 常用命令
 
@@ -86,6 +116,44 @@ uv run psi-session --workspace ./examples/simple_example ...
 # workspace 管理（需要 root）
 psi-workspace mount agent.sqfs ./workspace
 psi-workspace snapshot ./workspace --output new.sqfs
+```
+
+## Python API
+
+所有模块同时提供 Python function 接口：
+
+```python
+from psi_session import run_session
+from psi_ai.openai import run_ai
+from psi_channel.tui import run_channel
+from psi_workspace import run_mount, run_unmount, run_snapshot, run_list
+
+# 启动 AI Caller
+await run_ai(
+    socket_path="./ai.sock",
+    model="qwen3.5-plus",
+    api_key="...",
+    base_url="https://coding.dashscope.aliyuncs.com/v1",
+    log_level="INFO"
+)
+
+# 启动 Session
+await run_session(
+    workspace_path="./examples/simple_example",
+    channel_socket="./channel.sock",
+    llm_socket="./ai.sock",
+    session_id="main",
+    log_level="INFO"
+)
+
+# 启动 TUI
+await run_channel(session_socket="./channel.sock")
+
+# Workspace 管理（需要 root）
+await run_mount("agent.sqfs", "./workspace")
+await run_unmount("./workspace")
+await run_snapshot("./workspace", "new.sqfs", description="v2")
+run_list("./workspace")
 ```
 
 ## 详细规格

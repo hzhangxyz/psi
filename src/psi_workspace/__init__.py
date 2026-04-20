@@ -1,23 +1,43 @@
 """Psi Workspace - SquashFS/OverlayFS manager."""
 
-import argparse
+import asyncio
 import json
-import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
+import tyro
 from loguru import logger
+from pydantic import BaseModel
+
+
+class SnapshotEntry(BaseModel):
+    """Snapshot metadata entry."""
+
+    name: str
+    description: str
+    created_at: str
+
+
+class Manifest(BaseModel):
+    """Workspace manifest."""
+
+    current: dict[str, Any] | None = None
+    snapshots: list[SnapshotEntry] = []
 
 
 class WorkspaceManager:
     """Manages SquashFS and OverlayFS for workspace snapshots."""
 
+    manifest_file: str
+
     def __init__(self) -> None:
         self.manifest_file = "manifest.json"
         logger.debug("WorkspaceManager initialized")
 
-    def mount(self, squashfs_path: str, output_dir: str) -> None:
+    async def mount(self, squashfs_path: str, output_dir: str) -> None:
         """Mount a SquashFS image as a writable workspace using OverlayFS."""
         squashfs = Path(squashfs_path).resolve()
         workspace = Path(output_dir).resolve()
@@ -37,22 +57,32 @@ class WorkspaceManager:
 
         # Mount squashfs to lower
         logger.debug(f"Mounting squashfs | source={squashfs} | target={lower_dir}")
-        subprocess.run(
-            ["mount", "-t", "squashfs", str(squashfs), str(lower_dir)],
-            check=True,
+        proc = await asyncio.create_subprocess_exec(
+            "mount",
+            "-t",
+            "squashfs",
+            str(squashfs),
+            str(lower_dir),
         )
+        await proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError(f"mount squashfs failed with code {proc.returncode}")
         logger.info(f"SquashFS mounted | path={lower_dir}")
 
         # Mount overlayfs
         logger.debug(f"Mounting overlayfs | lower={lower_dir} | upper={upper_dir} | work={work_dir}")
-        subprocess.run(
-            [
-                "mount", "-t", "overlay", "overlay",
-                "-o", f"lowerdir={lower_dir},upperdir={upper_dir},workdir={work_dir}",
-                str(workspace),
-            ],
-            check=True,
+        proc = await asyncio.create_subprocess_exec(
+            "mount",
+            "-t",
+            "overlay",
+            "overlay",
+            "-o",
+            f"lowerdir={lower_dir},upperdir={upper_dir},workdir={work_dir}",
+            str(workspace),
         )
+        await proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError(f"mount overlayfs failed with code {proc.returncode}")
         logger.info(f"OverlayFS mounted | path={workspace}")
 
         # Create/update manifest
@@ -61,7 +91,7 @@ class WorkspaceManager:
 
         logger.info(f"Workspace mounted successfully | squashfs={squashfs_path} | workspace={output_dir}")
 
-    def unmount(self, workspace_dir: str) -> None:
+    async def unmount(self, workspace_dir: str) -> None:
         """Unmount a workspace and clean up."""
         workspace = Path(workspace_dir).resolve()
 
@@ -69,19 +99,25 @@ class WorkspaceManager:
 
         # Unmount overlayfs
         logger.debug(f"Unmounting overlayfs | path={workspace}")
-        subprocess.run(["umount", str(workspace)], check=True)
+        proc = await asyncio.create_subprocess_exec("umount", str(workspace))
+        await proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError(f"umount overlayfs failed with code {proc.returncode}")
         logger.info(f"OverlayFS unmounted | path={workspace}")
 
         # Unmount squashfs (lower)
         lower_dir = Path(str(workspace) + ".lower")
         if lower_dir.exists():
             logger.debug(f"Unmounting squashfs | path={lower_dir}")
-            subprocess.run(["umount", str(lower_dir)], check=True)
+            proc = await asyncio.create_subprocess_exec("umount", str(lower_dir))
+            await proc.wait()
+            if proc.returncode != 0:
+                raise RuntimeError(f"umount squashfs failed with code {proc.returncode}")
             logger.info(f"SquashFS unmounted | path={lower_dir}")
 
         logger.info(f"Workspace unmounted successfully | workspace={workspace_dir}")
 
-    def snapshot(
+    async def snapshot(
         self,
         workspace_dir: str,
         output_path: str,
@@ -96,15 +132,20 @@ class WorkspaceManager:
 
         if not upper_dir.exists():
             logger.warning(f"No changes to snapshot | upper_dir={upper_dir} not found")
-            print(f"No changes to snapshot (upper dir not found)", file=sys.stderr)
+            print("No changes to snapshot (upper dir not found)", file=sys.stderr)
             return
 
         # Create squashfs from upper directory
         logger.debug(f"Creating squashfs | source={upper_dir} | output={output}")
-        subprocess.run(
-            ["mksquashfs", str(upper_dir), str(output), "-noappend"],
-            check=True,
+        proc = await asyncio.create_subprocess_exec(
+            "mksquashfs",
+            str(upper_dir),
+            str(output),
+            "-noappend",
         )
+        await proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError(f"mksquashfs failed with code {proc.returncode}")
         logger.info(f"SquashFS created | path={output}")
 
         # Update manifest with snapshot history
@@ -125,99 +166,179 @@ class WorkspaceManager:
             print("No snapshots found")
             return
 
-        manifest = json.loads(manifest_path.read_text())
-        snapshots = manifest.get("snapshots", [])
+        manifest_data = json.loads(manifest_path.read_text())
+        manifest = Manifest.model_validate(manifest_data)
+        snapshots = manifest.snapshots
 
         logger.info(f"Found {len(snapshots)} snapshots")
 
         print(f"Snapshots for {workspace_dir}:")
         for snap in snapshots:
-            print(f"  - {snap['name']}: {snap['description']} ({snap['created_at']})")
-            logger.debug(f"Snapshot | name={snap['name']} | created_at={snap['created_at']}")
+            print(f"  - {snap.name}: {snap.description} ({snap.created_at})")
+            logger.debug(f"Snapshot | name={snap.name} | created_at={snap.created_at}")
 
     def _update_manifest(self, manifest_path: Path, name: str, status: str) -> None:
         """Update manifest file."""
         logger.debug(f"Updating manifest | path={manifest_path} | name={name} | status={status}")
 
         if manifest_path.exists():
-            manifest = json.loads(manifest_path.read_text())
+            manifest_data = json.loads(manifest_path.read_text())
+            manifest = Manifest.model_validate(manifest_data)
         else:
-            manifest = {"current": None, "snapshots": []}
+            manifest = Manifest()
 
-        manifest["current"] = {
+        manifest.current = {
             "name": name,
             "status": status,
             "mounted_at": datetime.now().isoformat(),
         }
 
-        manifest_path.write_text(json.dumps(manifest, indent=2))
-        logger.debug(f"Manifest updated | current={manifest['current']}")
+        manifest_path.write_text(manifest.model_dump_json(indent=2))
+        logger.debug(f"Manifest updated | current={manifest.current}")
 
     def _add_snapshot(self, manifest_path: Path, name: str, description: str) -> None:
         """Add snapshot entry to manifest."""
         logger.debug(f"Adding snapshot to manifest | path={manifest_path} | name={name}")
 
         if manifest_path.exists():
-            manifest = json.loads(manifest_path.read_text())
+            manifest_data = json.loads(manifest_path.read_text())
+            manifest = Manifest.model_validate(manifest_data)
         else:
-            manifest = {"current": None, "snapshots": []}
+            manifest = Manifest()
 
-        snapshot_entry = {
-            "name": name,
-            "description": description,
-            "created_at": datetime.now().isoformat(),
-        }
+        snapshot_entry = SnapshotEntry(
+            name=name,
+            description=description,
+            created_at=datetime.now().isoformat(),
+        )
 
-        manifest["snapshots"].append(snapshot_entry)
-        manifest_path.write_text(json.dumps(manifest, indent=2))
+        manifest.snapshots.append(snapshot_entry)
+        manifest_path.write_text(manifest.model_dump_json(indent=2))
 
         logger.debug(f"Snapshot entry added | snapshot={snapshot_entry}")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Psi Workspace Manager")
-    parser.add_argument("--log-level", default="INFO", help="Log level (DEBUG, INFO, WARNING, ERROR)")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+async def run_mount(squashfs_path: str, output_dir: str, log_level: str = "INFO") -> None:
+    """Python function interface for mount."""
+    _setup_logger(log_level)
+    manager = WorkspaceManager()
+    await manager.mount(squashfs_path, output_dir)
 
-    # Mount command
-    mount_parser = subparsers.add_parser("mount", help="Mount squashfs as workspace")
-    mount_parser.add_argument("squashfs", help="SquashFS image path")
-    mount_parser.add_argument("output", help="Output workspace directory")
 
-    # Unmount command
-    unmount_parser = subparsers.add_parser("unmount", help="Unmount workspace")
-    unmount_parser.add_argument("workspace", help="Workspace directory")
+async def run_unmount(workspace_dir: str, log_level: str = "INFO") -> None:
+    """Python function interface for unmount."""
+    _setup_logger(log_level)
+    manager = WorkspaceManager()
+    await manager.unmount(workspace_dir)
 
-    # Snapshot command
-    snapshot_parser = subparsers.add_parser("snapshot", help="Create snapshot")
-    snapshot_parser.add_argument("workspace", help="Workspace directory")
-    snapshot_parser.add_argument("output", help="Output squashfs path")
-    snapshot_parser.add_argument("--description", default="", help="Snapshot description")
 
-    # List command
-    list_parser = subparsers.add_parser("list", help="List snapshots")
-    list_parser.add_argument("workspace", help="Workspace directory")
+async def run_snapshot(
+    workspace_dir: str,
+    output_path: str,
+    description: str = "",
+    log_level: str = "INFO",
+) -> None:
+    """Python function interface for snapshot."""
+    _setup_logger(log_level)
+    manager = WorkspaceManager()
+    await manager.snapshot(workspace_dir, output_path, description)
 
-    args = parser.parse_args()
 
-    # Configure logger
+def run_list(workspace_dir: str, log_level: str = "INFO") -> None:
+    """Python function interface for list."""
+    _setup_logger(log_level)
+    manager = WorkspaceManager()
+    manager.list_snapshots(workspace_dir)
+
+
+def _setup_logger(log_level: str) -> None:
+    """Configure logger."""
     logger.remove()
     logger.add(
         lambda msg: print(msg, end=""),
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>workspace</cyan> | {message}",
-        level=args.log_level,
+        level=log_level,
     )
 
-    manager = WorkspaceManager()
 
-    if args.command == "mount":
-        manager.mount(args.squashfs, args.output)
-    elif args.command == "unmount":
-        manager.unmount(args.workspace)
-    elif args.command == "snapshot":
-        manager.snapshot(args.workspace, args.output, args.description)
-    elif args.command == "list":
-        manager.list_snapshots(args.workspace)
+@dataclass
+class MountArgs:
+    """Mount SquashFS as workspace."""
+
+    squashfs: str
+    """SquashFS image path"""
+
+    output: str
+    """Output workspace directory"""
+
+    log_level: str = "INFO"
+    """Log level (DEBUG, INFO, WARNING, ERROR)"""
+
+
+@dataclass
+class UnmountArgs:
+    """Unmount workspace."""
+
+    workspace: str
+    """Workspace directory"""
+
+    log_level: str = "INFO"
+    """Log level (DEBUG, INFO, WARNING, ERROR)"""
+
+
+@dataclass
+class SnapshotArgs:
+    """Create snapshot."""
+
+    workspace: str
+    """Workspace directory"""
+
+    output: str
+    """Output SquashFS path"""
+
+    description: str = ""
+    """Snapshot description"""
+
+    log_level: str = "INFO"
+    """Log level (DEBUG, INFO, WARNING, ERROR)"""
+
+
+@dataclass
+class ListArgs:
+    """List snapshots."""
+
+    workspace: str
+    """Workspace directory"""
+
+    log_level: str = "INFO"
+    """Log level (DEBUG, INFO, WARNING, ERROR)"""
+
+
+@dataclass
+class CliArgs:
+    """Workspace CLI with subcommands."""
+
+    mount: MountArgs | None = None
+    unmount: UnmountArgs | None = None
+    snapshot: SnapshotArgs | None = None
+    list: ListArgs | None = None
+
+
+def main() -> None:
+    args = tyro.cli(CliArgs)
+
+    if args.mount:
+        asyncio.run(run_mount(args.mount.squashfs, args.mount.output, args.mount.log_level))
+    elif args.unmount:
+        asyncio.run(run_unmount(args.unmount.workspace, args.unmount.log_level))
+    elif args.snapshot:
+        asyncio.run(
+            run_snapshot(
+                args.snapshot.workspace, args.snapshot.output, args.snapshot.description, args.snapshot.log_level
+            )
+        )
+    elif args.list:
+        run_list(args.list.workspace, args.list.log_level)
 
 
 if __name__ == "__main__":
