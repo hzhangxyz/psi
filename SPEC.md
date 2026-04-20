@@ -335,15 +335,31 @@ async def main():
 使用 pytest 和 pytest-asyncio：
 
 ```bash
-uv run pytest tests/ -v
+# 运行单元测试
+uv run pytest tests/ -v --ignore=tests/integration/
+
+# 运行集成测试（需要设置环境变量）
+export PSI_API_KEY="your-api-key"
+export PSI_BASE_URL="https://api.openai.com/v1"
+export PSI_MODEL="gpt-4o-mini"
+uv run pytest tests/integration/ -v
 ```
 
 测试覆盖：
 - 协议模型测试 (`test_protocol.py`)
 - Session 核心逻辑测试 (`test_session.py`)
+- AI Caller 测试 (`test_ai.py`)
 - Workspace 管理器测试 (`test_workspace.py`)
+- 集成测试 (`tests/integration/`):
+  - `test_ai_session.py`: AI Caller <-> Session 通信
+  - `test_session_channel.py`: Session <-> Channel 通信
 
-GitHub Actions 自动测试配置见 `.github/workflows/test.yml`，在 push 和 PR 时自动运行 lint、类型检查和测试。
+集成测试环境变量：
+- `PSI_API_KEY`: API 密钥（必需）
+- `PSI_BASE_URL`: API endpoint（可选，默认 OpenAI）
+- `PSI_MODEL`: 模型名称（可选，默认 gpt-4o-mini）
+
+GitHub Actions 自动测试配置见 `.github/workflows/test.yml`，在 push 和 PR 时自动运行 lint、类型检查和单元测试。集成测试需要配置 GitHub Secrets。
 
 ## 15. 代码质量
 

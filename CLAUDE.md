@@ -97,7 +97,13 @@ uv run ruff format examples/ tests/ src/ --check
 uv run ty check examples/ tests/ src/
 
 # 测试
-uv run pytest tests/ -v
+uv run pytest tests/ -v --ignore=tests/integration/
+
+# 集成测试（需要设置环境变量）
+export PSI_API_KEY="your-api-key"
+export PSI_BASE_URL="https://api.openai.com/v1"
+export PSI_MODEL="gpt-4o-mini"
+uv run pytest tests/integration/ -v
 ```
 
 **CI/CD**: GitHub Actions 自动运行 ruff check、ruff format、ty 和测试（`.github/workflows/test.yml`）。

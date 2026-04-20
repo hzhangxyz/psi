@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  lint-and-unit-test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -35,5 +35,29 @@ jobs:
       - name: Run ty type check
         run: uv run ty check examples/ tests/ src/
 
-      - name: Run pytest
-        run: uv run pytest tests/ -v
+      - name: Run pytest (unit tests only)
+        run: uv run pytest tests/ -v --ignore=tests/integration/
+
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: lint-and-unit-test
+    if: ${{ secrets.PSI_API_KEY != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --python 3.12
+
+      - name: Run integration tests
+        env:
+          PSI_API_KEY: ${{ secrets.PSI_API_KEY }}
+          PSI_BASE_URL: ${{ secrets.PSI_BASE_URL }}
+          PSI_MODEL: ${{ secrets.PSI_MODEL }}
+        run: uv run pytest tests/integration/ -v
