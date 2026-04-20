@@ -159,3 +159,38 @@ run_list("./workspace")
 ## 详细规格
 
 见 `SPEC.md`。
+
+## 代码风格
+
+### 类设计
+
+- **内部状态用私有属性**: 类内部状态用 `_` 前缀（如 `_messages`, `_tools`, `_workspace_path`）
+- **配置用 Pydantic**: 配置参数封装在 `SessionConfig` 等 Pydantic model 中
+- **配置与实现分离**: 配置类只存参数，业务类接收配置对象
+
+### 函数设计
+
+- **辅助函数独立**: 通用辅助函数独立定义（如 `_is_valid_tool_call_name`, `_load_python_module`)
+- **函数有单一职责**: 每个函数只做一件事，名字描述职责
+- **缓存复用**: 重复加载的资源缓存（如 `_builder_module`）
+
+### 代码组织
+
+- **模块顶部 import**: 所有 import 放文件顶部，不在函数内部 import
+- **类型注解**: 所有函数参数和返回值有类型注解
+- **docstring 简洁**: docstring 只说明功能，不写冗余说明
+
+### 日志风格
+
+- **格式统一**: `logger.info("Action | key={value}")` 格式，用 `|` 分隔
+- **级别合理**: 
+  - `INFO`: 重要状态变化（初始化、连接、完成）
+  - `DEBUG`: 详细过程（参数、中间状态）
+  - `WARNING`: 预期内的异常情况
+  - `ERROR`: 错误和失败
+
+### 其他约定
+
+- **避免 ad-hoc**: 不写重复逻辑，提取为辅助函数
+- **f-string 有变量**: f-string 必须有插值，否则用普通字符串
+- **is 比较**: `True/False/None` 用 `is` 比较，不用 `==`
