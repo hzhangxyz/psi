@@ -55,16 +55,16 @@ uv run ty check examples/ tests/ src/
 **运行测试:**
 ```bash
 # 单元测试
-uv run pytest tests/ -v --ignore=tests/integration/
+uv run pytest tests/unit/ -v
 
 # 集成测试（需要设置环境变量）
-export PSI_API_KEY="your-api-key"
-export PSI_BASE_URL="https://api.openai.com/v1"
-export PSI_MODEL="gpt-4o-mini"
+export OPENAI_API_KEY="your-api-key"
+export OPENAI_BASE_URL="https://api.openai.com/v1"
+export OPENAI_MODEL="gpt-4o-mini"
 uv run pytest tests/integration/ -v
 ```
 
-**CI/CD:** GitHub Actions 自动运行 lint、类型检查和单元测试。集成测试需要配置 GitHub Secrets（`PSI_API_KEY`, `PSI_BASE_URL`, `PSI_MODEL`）。
+**CI/CD:** GitHub Actions 自动运行 lint、类型检查和单元测试。集成测试需要配置 GitHub Secrets（`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`）。
 
 ## 快速开始
 

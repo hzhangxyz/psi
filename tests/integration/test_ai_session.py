@@ -12,15 +12,15 @@ from psi_ai.openai import AICaller
 from psi_common import LLMRequest
 from psi_session import Session, SessionConfig
 
-# Environment variables for API configuration
-API_KEY = os.environ.get("PSI_API_KEY")
-BASE_URL = os.environ.get("PSI_BASE_URL", "https://api.openai.com/v1")
-MODEL = os.environ.get("PSI_MODEL", "gpt-4o-mini")
+# Environment variables for API configuration (OpenAI style)
+API_KEY = os.environ.get("OPENAI_API_KEY")
+BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 # Skip all tests in this module if API key is not configured
 pytestmark = pytest.mark.skipif(
     not API_KEY,
-    reason="PSI_API_KEY environment variable not set",
+    reason="OPENAI_API_KEY environment variable not set",
 )
 
 

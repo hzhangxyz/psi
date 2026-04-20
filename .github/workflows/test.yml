@@ -36,7 +36,7 @@ jobs:
         run: uv run ty check examples/ tests/ src/
 
       - name: Run pytest (unit tests only)
-        run: uv run pytest tests/ -v --ignore=tests/integration/
+        run: uv run pytest tests/unit/ -v
 
   integration-test:
     runs-on: ubuntu-latest
@@ -57,7 +57,7 @@ jobs:
 
       - name: Run integration tests
         env:
-          PSI_API_KEY: ${{ secrets.PSI_API_KEY }}
-          PSI_BASE_URL: ${{ secrets.PSI_BASE_URL }}
-          PSI_MODEL: ${{ secrets.PSI_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
         run: uv run pytest tests/integration/ -v

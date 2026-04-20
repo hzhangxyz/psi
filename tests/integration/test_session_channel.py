@@ -11,10 +11,10 @@ import pytest
 from psi_session import Session, SessionConfig
 
 # Skip if API key not set (needed for full integration)
-API_KEY = os.environ.get("PSI_API_KEY")
+API_KEY = os.environ.get("OPENAI_API_KEY")
 pytestmark = pytest.mark.skipif(
     not API_KEY,
-    reason="PSI_API_KEY environment variable not set",
+    reason="OPENAI_API_KEY environment variable not set",
 )
 
 
@@ -218,8 +218,8 @@ class TestSessionWithRealAI:
         """Test full session flow with real AI."""
         from psi_ai.openai import AICaller
 
-        base_url = os.environ.get("PSI_BASE_URL", "https://api.openai.com/v1")
-        model = os.environ.get("PSI_MODEL", "gpt-4o-mini")
+        base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
         # Setup paths
         ai_socket = str(tmp_path / "ai.sock")
