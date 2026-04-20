@@ -120,8 +120,9 @@ uv sync
 uv run psi-session --workspace ./examples/simple_example ...
 
 # workspace 管理（需要 root）
-psi-workspace mount agent.sqfs ./workspace
-psi-workspace snapshot ./workspace --output new.sqfs
+psi-workspace-create ./examples/simple_example base.sqfs
+psi-workspace-mount base.sqfs ./workspace
+psi-workspace-snapshot ./workspace --output new.sqfs
 ```
 
 ## Python API

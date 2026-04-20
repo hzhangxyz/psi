@@ -9,7 +9,7 @@
 - **psi-ai-openai**：LLM Caller（OpenAI 兼容），封装大语言模型 API，通过 named socket 暴露接口。
 - **psi-session**：运行 ReAct 循环，管理对话历史，调用工具/技能。
 - **psi-channel-tui**：TUI 用户交互界面。
-- **psi-workspace**：SquashFS/OverlayFS 管理器，负责镜像挂载和快照。
+- **psi-mount/psi-unmount/psi-snapshot/psi-workspace-list**：SquashFS/OverlayFS 管理器，负责镜像挂载和快照。
 
 **Let it crash**：组件出错时不做复杂恢复，让进程崩溃。简化实现，依赖外部重启机制。不检查依赖是否存在（如 prompt_toolkit），缺失时直接报错退出。
 
@@ -82,7 +82,7 @@ CREATE TABLE messages (
 psi-channel-tui --session-socket /tmp/channel.sock
 ```
 
-### 2.4 psi-workspace
+### 2.4 psi-workspace-create / psi-workspace-mount / psi-workspace-umount / psi-workspace-snapshot / psi-workspace-list
 
 职责：
 - 挂载 SquashFS 镜像为可写 workspace（使用 OverlayFS）。
@@ -91,10 +91,11 @@ psi-channel-tui --session-socket /tmp/channel.sock
 
 启动：
 ```bash
-psi-workspace mount agent.sqfs ./workspace
-psi-workspace snapshot ./workspace --output new.sqfs --description "v2"
-psi-workspace unmount ./workspace
-psi-workspace list ./workspace
+psi-workspace-create ./examples/simple_example base.sqfs --description "initial"
+psi-workspace-mount base.sqfs ./workspace
+psi-workspace-snapshot ./workspace --output new.sqfs --description "v2"
+psi-workspace-umount ./workspace
+psi-workspace-list ./workspace
 ```
 
 OverlayFS 目录结构：

@@ -154,6 +154,35 @@ class WorkspaceManager:
 
         logger.info(f"Snapshot created successfully | output={output_path}")
 
+    async def create(self, source_dir: str, output_path: str, description: str = "") -> None:
+        """Create a new SquashFS image from a directory."""
+        source = Path(source_dir).resolve()
+        output = Path(output_path).resolve()
+
+        logger.info(f"Creating SquashFS | source={source} | output={output}")
+
+        if not source.exists():
+            raise RuntimeError(f"Source directory not found: {source}")
+
+        # Create squashfs from source directory
+        logger.debug(f"Running mksquashfs | source={source} | output={output}")
+        proc = await asyncio.create_subprocess_exec(
+            "mksquashfs",
+            str(source),
+            str(output),
+            "-noappend",
+        )
+        await proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError(f"mksquashfs failed with code {proc.returncode}")
+        logger.info(f"SquashFS created | path={output}")
+
+        # Create initial manifest in source parent directory
+        manifest_path = source.parent / self.manifest_file
+        self._add_snapshot(manifest_path, output.name, description or f"Initial image from {source.name}")
+
+        logger.info(f"SquashFS created successfully | output={output_path}")
+
     def list_snapshots(self, workspace_dir: str) -> None:
         """List all snapshots for a workspace."""
         workspace = Path(workspace_dir).resolve()
@@ -244,6 +273,18 @@ async def run_snapshot(
     await manager.snapshot(workspace_dir, output_path, description)
 
 
+async def run_create(
+    source_dir: str,
+    output_path: str,
+    description: str = "",
+    log_level: str = "INFO",
+) -> None:
+    """Python function interface for create."""
+    _setup_logger(log_level)
+    manager = WorkspaceManager()
+    await manager.create(source_dir, output_path, description)
+
+
 def run_list(workspace_dir: str, log_level: str = "INFO") -> None:
     """Python function interface for list."""
     _setup_logger(log_level)
@@ -315,6 +356,23 @@ class ListArgs:
 
 
 @dataclass
+class CreateArgs:
+    """Create SquashFS from directory."""
+
+    source: str
+    """Source directory"""
+
+    output: str
+    """Output SquashFS path"""
+
+    description: str = ""
+    """Snapshot description"""
+
+    log_level: str = "INFO"
+    """Log level (DEBUG, INFO, WARNING, ERROR)"""
+
+
+@dataclass
 class CliArgs:
     """Workspace CLI with subcommands."""
 
@@ -324,6 +382,37 @@ class CliArgs:
     list: ListArgs | None = None
 
 
+def main_mount() -> None:
+    """CLI entry for mount command."""
+    args = tyro.cli(MountArgs)
+    asyncio.run(run_mount(args.squashfs, args.output, args.log_level))
+
+
+def main_unmount() -> None:
+    """CLI entry for unmount command."""
+    args = tyro.cli(UnmountArgs)
+    asyncio.run(run_unmount(args.workspace, args.log_level))
+
+
+def main_snapshot() -> None:
+    """CLI entry for snapshot command."""
+    args = tyro.cli(SnapshotArgs)
+    asyncio.run(run_snapshot(args.workspace, args.output, args.description, args.log_level))
+
+
+def main_list() -> None:
+    """CLI entry for list command."""
+    args = tyro.cli(ListArgs)
+    run_list(args.workspace, args.log_level)
+
+
+def main_create() -> None:
+    """CLI entry for create command."""
+    args = tyro.cli(CreateArgs)
+    asyncio.run(run_create(args.source, args.output, args.description, args.log_level))
+
+
+# Keep old main for backward compatibility
 def main() -> None:
     args = tyro.cli(CliArgs)
 
