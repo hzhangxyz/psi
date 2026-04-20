@@ -120,6 +120,8 @@ uv sync
 uv run psi-session --workspace ./examples/simple_example ...
 
 # workspace 管理（需要 root）
+# Workspace 管理（使用 FUSE，无需 root）
+# 先安装依赖: sudo apt install squashfuse fuse-overlayfs squashfs-tools
 psi-workspace-create ./examples/simple_example base.sqfs
 psi-workspace-mount base.sqfs ./workspace
 psi-workspace-snapshot ./workspace --output new.sqfs

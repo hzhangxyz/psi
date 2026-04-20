@@ -1,4 +1,4 @@
-"""Psi Workspace - SquashFS/OverlayFS manager."""
+"""Psi Workspace - SquashFS/OverlayFS manager using FUSE (no root required)."""
 
 import asyncio
 import json
@@ -29,7 +29,7 @@ class Manifest(BaseModel):
 
 
 class WorkspaceManager:
-    """Manages SquashFS and OverlayFS for workspace snapshots."""
+    """Manages SquashFS and OverlayFS for workspace snapshots using FUSE."""
 
     manifest_file: str
 
@@ -38,7 +38,7 @@ class WorkspaceManager:
         logger.debug("WorkspaceManager initialized")
 
     async def mount(self, squashfs_path: str, output_dir: str) -> None:
-        """Mount a SquashFS image as a writable workspace using OverlayFS."""
+        """Mount a SquashFS image as a writable workspace using FUSE (no root required)."""
         squashfs = Path(squashfs_path).resolve()
         workspace = Path(output_dir).resolve()
 
@@ -52,38 +52,38 @@ class WorkspaceManager:
         upper_dir.mkdir(parents=True, exist_ok=True)
         work_dir.mkdir(parents=True, exist_ok=True)
         lower_dir.mkdir(parents=True, exist_ok=True)
+        workspace.mkdir(parents=True, exist_ok=True)
 
         logger.debug(f"Directories created | upper={upper_dir} | work={work_dir} | lower={lower_dir}")
 
-        # Mount squashfs to lower
-        logger.debug(f"Mounting squashfs | source={squashfs} | target={lower_dir}")
+        # Mount squashfs to lower using squashfuse (FUSE, no root)
+        logger.debug(f"Mounting squashfs with squashfuse | source={squashfs} | target={lower_dir}")
         proc = await asyncio.create_subprocess_exec(
-            "mount",
-            "-t",
-            "squashfs",
+            "squashfuse",
             str(squashfs),
             str(lower_dir),
         )
         await proc.wait()
         if proc.returncode != 0:
-            raise RuntimeError(f"mount squashfs failed with code {proc.returncode}")
-        logger.info(f"SquashFS mounted | path={lower_dir}")
+            raise RuntimeError(f"squashfuse failed with code {proc.returncode}")
+        logger.info(f"SquashFS mounted (FUSE) | path={lower_dir}")
 
-        # Mount overlayfs
-        logger.debug(f"Mounting overlayfs | lower={lower_dir} | upper={upper_dir} | work={work_dir}")
+        # Mount overlayfs using fuse-overlayfs (FUSE, no root)
+        logger.debug(
+            f"Mounting overlayfs with fuse-overlayfs | lower={lower_dir} | upper={upper_dir} | work={work_dir}"
+        )
         proc = await asyncio.create_subprocess_exec(
-            "mount",
-            "-t",
-            "overlay",
-            "overlay",
+            "fuse-overlayfs",
             "-o",
             f"lowerdir={lower_dir},upperdir={upper_dir},workdir={work_dir}",
             str(workspace),
         )
         await proc.wait()
         if proc.returncode != 0:
-            raise RuntimeError(f"mount overlayfs failed with code {proc.returncode}")
-        logger.info(f"OverlayFS mounted | path={workspace}")
+            # Cleanup: unmount squashfuse if overlay failed
+            await self._unmount_fuse(lower_dir)
+            raise RuntimeError(f"fuse-overlayfs failed with code {proc.returncode}")
+        logger.info(f"OverlayFS mounted (FUSE) | path={workspace}")
 
         # Create/update manifest
         manifest_path = workspace.parent / self.manifest_file
@@ -91,28 +91,41 @@ class WorkspaceManager:
 
         logger.info(f"Workspace mounted successfully | squashfs={squashfs_path} | workspace={output_dir}")
 
+    async def _unmount_fuse(self, mount_point: Path) -> None:
+        """Unmount a FUSE mount point using fusermount."""
+        logger.debug(f"Unmounting FUSE mount | path={mount_point}")
+        proc = await asyncio.create_subprocess_exec(
+            "fusermount",
+            "-u",
+            str(mount_point),
+        )
+        await proc.wait()
+        if proc.returncode != 0:
+            logger.warning(f"fusermount failed with code {proc.returncode}, trying lazy unmount")
+            # Try lazy unmount
+            proc = await asyncio.create_subprocess_exec(
+                "fusermount",
+                "-u",
+                "-z",
+                str(mount_point),
+            )
+            await proc.wait()
+        logger.info(f"FUSE mount unmounted | path={mount_point}")
+
     async def unmount(self, workspace_dir: str) -> None:
-        """Unmount a workspace and clean up."""
+        """Unmount a workspace and clean up (no root required)."""
         workspace = Path(workspace_dir).resolve()
 
         logger.info(f"Unmounting workspace | path={workspace}")
 
-        # Unmount overlayfs
-        logger.debug(f"Unmounting overlayfs | path={workspace}")
-        proc = await asyncio.create_subprocess_exec("umount", str(workspace))
-        await proc.wait()
-        if proc.returncode != 0:
-            raise RuntimeError(f"umount overlayfs failed with code {proc.returncode}")
+        # Unmount fuse-overlayfs
+        await self._unmount_fuse(workspace)
         logger.info(f"OverlayFS unmounted | path={workspace}")
 
-        # Unmount squashfs (lower)
+        # Unmount squashfuse (lower)
         lower_dir = Path(str(workspace) + ".lower")
         if lower_dir.exists():
-            logger.debug(f"Unmounting squashfs | path={lower_dir}")
-            proc = await asyncio.create_subprocess_exec("umount", str(lower_dir))
-            await proc.wait()
-            if proc.returncode != 0:
-                raise RuntimeError(f"umount squashfs failed with code {proc.returncode}")
+            await self._unmount_fuse(lower_dir)
             logger.info(f"SquashFS unmounted | path={lower_dir}")
 
         logger.info(f"Workspace unmounted successfully | workspace={workspace_dir}")

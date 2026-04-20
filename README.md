@@ -96,10 +96,15 @@ uv run psi-channel-tui --session-socket ./channel.sock
 | `psi-session` | ReAct 循环引擎 | `run_session()` |
 | `psi-channel-tui` | TUI 用户界面 | `run_channel()` |
 | `psi-workspace-create` | 从目录创建 SquashFS | `run_create()` |
-| `psi-workspace-mount` | 挂载 SquashFS 为 workspace | `run_mount()` |
-| `psi-workspace-umount` | 卸载 workspace | `run_unmount()` |
+| `psi-workspace-mount` | 挂载 SquashFS 为 workspace（无需 root） | `run_mount()` |
+| `psi-workspace-umount` | 卸载 workspace（无需 root） | `run_unmount()` |
 | `psi-workspace-snapshot` | 创建快照 | `run_snapshot()` |
 | `psi-workspace-list` | 列出快照历史 | `run_list()` |
+
+**Workspace 依赖（Ubuntu/Debian）:**
+```bash
+sudo apt install squashfuse fuse-overlayfs squashfs-tools
+```
 
 所有 CLI 使用 **tyro** 实现，支持 `--log-level` 参数控制日志输出。TUI 默认 `WARNING` 级别避免干扰界面。
 

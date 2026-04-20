@@ -1,10 +1,16 @@
 """Tests for psi_workspace."""
 
 import json
+import shutil
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from psi_workspace import Manifest, SnapshotEntry, WorkspaceManager
+
+# Check if FUSE tools are available
+FUSE_AVAILABLE = all(shutil.which(tool) for tool in ["squashfuse", "fuse-overlayfs", "mksquashfs", "fusermount"])
 
 
 class TestSnapshotEntry:
@@ -132,3 +138,129 @@ class TestWorkspaceManager:
             assert len(data["snapshots"]) == 2
             assert data["snapshots"][0]["name"] == "v1.sqfs"
             assert data["snapshots"][1]["name"] == "v2.sqfs"
+
+
+# ============================================================================
+# FUSE Integration Tests (require squashfuse, fuse-overlayfs, mksquashfs)
+# ============================================================================
+
+
+@pytest.mark.skipif(not FUSE_AVAILABLE, reason="FUSE tools not available")
+class TestWorkspaceFUSE:
+    """Test WorkspaceManager with FUSE operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_squashfs(self):
+        """Test creating a SquashFS image from a directory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_dir = Path(tmpdir) / "source"
+            output_path = Path(tmpdir) / "base.sqfs"
+
+            # Create source directory with some files
+            source_dir.mkdir()
+            (source_dir / "AGENT.md").write_text("You are a helpful assistant.")
+            tools_dir = source_dir / "tools"
+            tools_dir.mkdir()
+            (tools_dir / "test.py").write_text("async def run(): pass")
+
+            manager = WorkspaceManager()
+            await manager.create(str(source_dir), str(output_path))
+
+            assert output_path.exists()
+            assert output_path.stat().st_size > 0
+
+            # Verify manifest was created
+            manifest_path = Path(tmpdir) / "manifest.json"
+            assert manifest_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_mount_and_unmount(self):
+        """Test mounting and unmounting a workspace."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_dir = Path(tmpdir) / "source"
+            squashfs_path = Path(tmpdir) / "base.sqfs"
+            workspace_dir = Path(tmpdir) / "workspace"
+
+            # Create source and squashfs
+            source_dir.mkdir()
+            (source_dir / "AGENT.md").write_text("Test agent")
+            tools_dir = source_dir / "tools"
+            tools_dir.mkdir()
+            (tools_dir / "echo.py").write_text("# echo tool")
+
+            manager = WorkspaceManager()
+            await manager.create(str(source_dir), str(squashfs_path))
+
+            # Mount
+            await manager.mount(str(squashfs_path), str(workspace_dir))
+
+            # Check workspace exists and has content
+            assert workspace_dir.exists()
+            assert (workspace_dir / "AGENT.md").exists()
+            assert (workspace_dir / "AGENT.md").read_text() == "Test agent"
+            assert (workspace_dir / "tools" / "echo.py").exists()
+
+            # Unmount
+            await manager.unmount(str(workspace_dir))
+
+    @pytest.mark.asyncio
+    async def test_write_and_snapshot(self):
+        """Test writing to workspace and creating snapshot."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_dir = Path(tmpdir) / "source"
+            squashfs_path = Path(tmpdir) / "base.sqfs"
+            workspace_dir = Path(tmpdir) / "workspace"
+            snapshot_path = Path(tmpdir) / "v1.sqfs"
+
+            # Create source and squashfs
+            source_dir.mkdir()
+            (source_dir / "AGENT.md").write_text("Test agent")
+
+            manager = WorkspaceManager()
+            await manager.create(str(source_dir), str(squashfs_path))
+            await manager.mount(str(squashfs_path), str(workspace_dir))
+
+            # Write new content
+            (workspace_dir / "new_file.txt").write_text("This is new content")
+            tools_dir = workspace_dir / "tools"
+            tools_dir.mkdir()
+            (tools_dir / "new_tool.py").write_text("# new tool")
+
+            # Create snapshot
+            await manager.snapshot(str(workspace_dir), str(snapshot_path), "added new content")
+
+            # Check snapshot exists
+            assert snapshot_path.exists()
+            assert snapshot_path.stat().st_size > 0
+
+            # Unmount
+            await manager.unmount(str(workspace_dir))
+
+            # Mount snapshot and verify changes
+            workspace2_dir = Path(tmpdir) / "workspace2"
+            await manager.mount(str(snapshot_path), str(workspace2_dir))
+
+            assert (workspace2_dir / "new_file.txt").exists()
+            assert (workspace2_dir / "new_file.txt").read_text() == "This is new content"
+            assert (workspace2_dir / "tools" / "new_tool.py").exists()
+
+            await manager.unmount(str(workspace2_dir))
+
+    @pytest.mark.asyncio
+    async def test_mount_nonexistent_squashfs(self):
+        """Test mounting a nonexistent SquashFS fails."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace_dir = Path(tmpdir) / "workspace"
+            manager = WorkspaceManager()
+
+            with pytest.raises(RuntimeError):
+                await manager.mount(str(Path(tmpdir) / "nonexistent.sqfs"), str(workspace_dir))
+
+    @pytest.mark.asyncio
+    async def test_create_from_nonexistent_source(self):
+        """Test creating from nonexistent source fails."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = WorkspaceManager()
+
+            with pytest.raises(RuntimeError):
+                await manager.create(str(Path(tmpdir) / "nonexistent"), str(Path(tmpdir) / "out.sqfs"))

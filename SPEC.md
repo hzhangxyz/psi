@@ -85,9 +85,19 @@ psi-channel-tui --session-socket /tmp/channel.sock
 ### 2.4 psi-workspace-create / psi-workspace-mount / psi-workspace-umount / psi-workspace-snapshot / psi-workspace-list
 
 职责：
-- 挂载 SquashFS 镜像为可写 workspace（使用 OverlayFS）。
+- 挂载 SquashFS 镜像为可写 workspace（使用 FUSE，无需 root）。
 - 创建快照（将修改打包为新 SquashFS）。
 - 保留快照历史（manifest.json）。
+
+依赖：
+- `squashfuse`: FUSE SquashFS 挂载工具
+- `fuse-overlayfs`: FUSE OverlayFS 实现
+- `mksquashfs`: 创建 SquashFS 镜像
+
+安装依赖（Ubuntu/Debian）：
+```bash
+sudo apt install squashfuse fuse-overlayfs squashfs-tools
+```
 
 启动：
 ```bash
@@ -432,11 +442,22 @@ def main() -> None:
 - pydantic（数据模型）
 - tyro（CLI）
 
+系统依赖（Workspace 模块）：
+- squashfuse：FUSE SquashFS 挂载工具
+- fuse-overlayfs：FUSE OverlayFS 实现
+- squashfs-tools：创建 SquashFS 镜像（mksquashfs）
+
+安装（Ubuntu/Debian）：
+```bash
+sudo apt install squashfuse fuse-overlayfs squashfs-tools
+```
+
 开发依赖：
 - ruff（lint/格式化）
 - ty（类型检查）
 - pytest（测试框架）
 - pytest-asyncio（异步测试）
+- pytest-cov（覆盖率）
 
 ## 19. 命名风格
 
