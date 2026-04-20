@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
       fail-fast: false
 
     steps:
@@ -41,7 +41,7 @@ jobs:
   integration-test:
     runs-on: ubuntu-latest
     needs: lint-and-unit-test
-    if: ${{ secrets.PSI_API_KEY != '' }}
+    # pytest skipif will skip tests if OPENAI_API_KEY is not set
 
     steps:
       - name: Checkout
