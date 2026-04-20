@@ -63,7 +63,7 @@ uv run pytest tests/ -v
 
 **终端 1 - 启动 LLM Caller:**
 ```bash
-uv run psi-ai-openai --socket ./psi-ai.sock \
+uv run psi-ai-openai --session-socket ./psi-ai.sock \
     --model gpt-4o \
     --api-key $API_KEY \
     --base-url https://api.openai.com/v1
@@ -73,7 +73,7 @@ uv run psi-ai-openai --socket ./psi-ai.sock \
 ```bash
 uv run psi-session --workspace ./examples/simple_example \
     --channel-socket ./channel.sock \
-    --llm-socket ./psi-ai.sock
+    --ai-socket ./psi-ai.sock
 ```
 
 **终端 3 - 启动 TUI:**

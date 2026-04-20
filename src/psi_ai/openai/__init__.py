@@ -18,23 +18,23 @@ from psi_common import LLMRequest, LLMResponse
 class AICaller:
     """LLM Caller that forwards requests to OpenAI-compatible APIs."""
 
-    socket_path: str
+    session_socket: str
     client: AsyncOpenAI
     model: str
 
     def __init__(
         self,
-        socket_path: str,
+        session_socket: str,
         api_key: str,
         base_url: str,
         model: str,
     ) -> None:
-        self.socket_path = socket_path
+        self.session_socket = session_socket
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model = model
 
         logger.info(f"AI Caller initialized | model={model} | base_url={base_url}")
-        logger.debug(f"AI Caller config | socket={socket_path}")
+        logger.debug(f"AI Caller config | socket={session_socket}")
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle a single client connection."""
@@ -155,25 +155,24 @@ class AICaller:
 
     async def run(self) -> None:
         """Start the Unix socket server."""
-        # Remove existing socket
-        socket_path = Path(self.socket_path)
+        socket_path = Path(self.session_socket)
         if socket_path.exists():
             socket_path.unlink()
-            logger.debug(f"Removed existing socket | path={self.socket_path}")
+            logger.debug(f"Removed existing socket | path={self.session_socket}")
 
         server = await asyncio.start_unix_server(
             self.handle_client,
-            path=self.socket_path,
+            path=self.session_socket,
         )
 
-        logger.info(f"AI server started | socket={self.socket_path} | model={self.model}")
+        logger.info(f"AI server started | socket={self.session_socket} | model={self.model}")
 
         async with server:
             await server.serve_forever()
 
 
 async def run_ai(
-    socket_path: str,
+    session_socket: str,
     model: str,
     api_key: str,
     base_url: str = "https://api.openai.com/v1",
@@ -182,7 +181,7 @@ async def run_ai(
     """Python function interface to run the AI caller.
 
     Args:
-        socket_path: Unix socket path to listen on
+        session_socket: Unix socket path to listen on
         model: Model name to use
         api_key: API key for the LLM provider
         base_url: API base URL
@@ -190,7 +189,7 @@ async def run_ai(
     """
     _setup_logger(log_level)
     caller = AICaller(
-        socket_path=socket_path,
+        session_socket=session_socket,
         api_key=api_key,
         base_url=base_url,
         model=model,
@@ -212,7 +211,7 @@ def _setup_logger(log_level: str) -> None:
 class CliArgs:
     """AI Caller CLI arguments."""
 
-    socket: str
+    session_socket: str
     """Unix socket path to listen on"""
 
     model: str
@@ -240,7 +239,7 @@ def main() -> None:
 
     asyncio.run(
         run_ai(
-            socket_path=args.socket,
+            session_socket=args.session_socket,
             model=args.model,
             api_key=api_key,
             base_url=args.base_url,

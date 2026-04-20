@@ -30,7 +30,7 @@
 
 启动：
 ```bash
-psi-ai-openai --socket /tmp/llm.sock \
+psi-ai-openai --session-socket /tmp/llm.sock \
               --model gpt-4o \
               --api-key $KEY \
               --base-url https://api.openai.com/v1
@@ -52,7 +52,7 @@ psi-ai-openai --socket /tmp/llm.sock \
 ```bash
 psi-session --workspace ./workspace \
             --channel-socket /tmp/channel.sock \
-            --llm-socket /tmp/llm.sock \
+            --ai-socket /tmp/llm.sock \
             --session-id main
 ```
 

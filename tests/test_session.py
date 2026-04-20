@@ -29,7 +29,7 @@ def session_config(temp_workspace):
     return SessionConfig(
         workspace_path=str(temp_workspace),
         channel_socket="/tmp/test-channel.sock",
-        llm_socket="/tmp/test-llm.sock",
+        ai_socket="/tmp/test-ai.sock",
         session_id="test",
     )
 
@@ -53,7 +53,7 @@ class TestSessionConfig:
         config = SessionConfig(
             workspace_path=str(temp_workspace),
             channel_socket="/tmp/test.sock",
-            llm_socket="/tmp/llm.sock",
+            ai_socket="/tmp/ai.sock",
             max_iterations=20,
         )
         assert config.max_iterations == 20
@@ -66,7 +66,7 @@ class TestSessionInit:
         """Test session has correct internal state."""
         assert session._workspace_path == temp_workspace
         assert session._config.channel_socket == "/tmp/test-channel.sock"
-        assert session._config.llm_socket == "/tmp/test-llm.sock"
+        assert session._config.ai_socket == "/tmp/test-ai.sock"
         assert session._config.session_id == "test"
         assert session._config.max_iterations == 10
 

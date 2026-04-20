@@ -23,7 +23,7 @@ class SessionConfig(BaseModel):
 
     workspace_path: str
     channel_socket: str
-    llm_socket: str
+    ai_socket: str
     session_id: str = "default"
     max_iterations: int = 10
 
@@ -60,7 +60,7 @@ class Session:
         self._builder_module: Any = None
 
         logger.info(f"Session initialized | id={config.session_id} | workspace={self._workspace_path}")
-        logger.debug(f"Session config | channel={config.channel_socket} | llm={config.llm_socket}")
+        logger.debug(f"Session config | channel={config.channel_socket} | ai={config.ai_socket}")
 
     async def init_db(self) -> None:
         """Initialize SQLite database for message history."""
@@ -265,7 +265,7 @@ class Session:
         logger.debug(f"Calling LLM | message_count={len(filtered_messages)}")
 
         try:
-            reader, writer = await asyncio.open_unix_connection(self._config.llm_socket)
+            reader, writer = await asyncio.open_unix_connection(self._config.ai_socket)
             logger.debug("Connected to LLM socket")
 
             request = LLMRequest(
@@ -483,7 +483,7 @@ def _setup_logger(log_level: str) -> None:
 async def run_session(
     workspace_path: str,
     channel_socket: str,
-    llm_socket: str,
+    ai_socket: str,
     session_id: str | None = None,
     log_level: str = "INFO",
 ) -> None:
@@ -492,7 +492,7 @@ async def run_session(
     Args:
         workspace_path: Path to workspace directory
         channel_socket: Unix socket path for channel connections
-        llm_socket: Unix socket path for LLM caller
+        ai_socket: Unix socket path for AI caller
         session_id: Optional session identifier
         log_level: Log level (DEBUG, INFO, WARNING, ERROR)
     """
@@ -500,7 +500,7 @@ async def run_session(
     config = SessionConfig(
         workspace_path=workspace_path,
         channel_socket=channel_socket,
-        llm_socket=llm_socket,
+        ai_socket=ai_socket,
         session_id=session_id or "default",
     )
     session = Session(config)
@@ -517,8 +517,8 @@ class CliArgs:
     channel_socket: str
     """Unix socket for channel connections"""
 
-    llm_socket: str
-    """Unix socket for LLM caller"""
+    ai_socket: str
+    """Unix socket for AI caller"""
 
     session_id: str | None = None
     """Session ID (for multi-session support)"""
@@ -533,7 +533,7 @@ def main() -> None:
         run_session(
             workspace_path=args.workspace,
             channel_socket=args.channel_socket,
-            llm_socket=args.llm_socket,
+            ai_socket=args.ai_socket,
             session_id=args.session_id,
             log_level=args.log_level,
         )

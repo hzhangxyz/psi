@@ -6,7 +6,7 @@
 
 ```bash
 # 1. 启动 LLM Caller
-uv run psi-ai-openai --socket ./psi-ai.sock \
+uv run psi-ai-openai --session-socket ./psi-ai.sock \
     --model qwen3.5-plus \
     --api-key $API_KEY \
     --base-url https://coding.dashscope.aliyuncs.com/v1
@@ -14,7 +14,7 @@ uv run psi-ai-openai --socket ./psi-ai.sock \
 # 2. 启动 Session
 uv run psi-session --workspace ./examples/simple_example \
     --channel-socket ./channel.sock \
-    --llm-socket ./psi-ai.sock
+    --ai-socket ./psi-ai.sock
 
 # 3. 启动 TUI
 uv run psi-channel-tui --session-socket ./channel.sock
@@ -130,7 +130,7 @@ from psi_workspace import run_mount, run_unmount, run_snapshot, run_list
 
 # 启动 AI Caller
 await run_ai(
-    socket_path="./ai.sock",
+    session_socket="./ai.sock",
     model="qwen3.5-plus",
     api_key="...",
     base_url="https://coding.dashscope.aliyuncs.com/v1",
@@ -141,7 +141,7 @@ await run_ai(
 await run_session(
     workspace_path="./examples/simple_example",
     channel_socket="./channel.sock",
-    llm_socket="./ai.sock",
+    ai_socket="./ai.sock",
     session_id="main",
     log_level="INFO"
 )
