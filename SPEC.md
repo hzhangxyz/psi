@@ -410,6 +410,28 @@ def main() -> None:
 
 开发依赖：
 - ruff（lint/格式化）
-- basedpyright（类型检查）
+- ty（类型检查）
 - pytest（测试框架）
 - pytest-asyncio（异步测试）
+
+## 19. 命名风格
+
+### CLI 参数
+
+- 所有参数使用 **snake_case**（如 `channel_socket`, `log_level`）
+- 位置参数使用简短单词（如 `workspace`, `model`）
+- socket 相关参数使用 `*_socket` 格式
+- 所有模块统一提供 `--log-level` 参数
+
+### 文件与目录
+
+- 模块目录：`psi_<name>`（如 `psi_session`, `psi_workspace`）
+- Python 文件：snake_case（如 `builder.py`, `protocol.py`）
+- Workspace 配置文件：全大写（如 `AGENT.md`, `SKILL.md`）
+
+### 代码命名
+
+- 私有属性：`_` 前缀（如 `_messages`, `_config`）
+- 函数：snake_case（如 `load_tools`, `run_session`）
+- 类：PascalCase（如 `Session`, `SessionConfig`）
+- Pydantic model：PascalCase（如 `LLMRequest`, `ToolResult`）

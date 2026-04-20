@@ -194,3 +194,29 @@ run_list("./workspace")
 - **避免 ad-hoc**: 不写重复逻辑，提取为辅助函数
 - **f-string 有变量**: f-string 必须有插值，否则用普通字符串
 - **is 比较**: `True/False/None` 用 `is` 比较，不用 `==`
+
+### 命名风格
+
+#### CLI 参数命名
+
+- **snake_case**: 所有 CLI 参数使用 snake_case（如 `channel_socket`, `log_level`）
+- **位置参数**: 简短单词（如 `workspace`, `model`, `output`）
+- **socket 参数**: `*_socket` 格式（如 `channel_socket`, `llm_socket`, `session_socket`）
+- **log_level**: 所有模块统一有 `log_level` 参数
+
+#### 文件命名
+
+- **模块目录**: `psi_<name>` 格式（如 `psi_session`, `psi_ai`, `psi_channel`, `psi_workspace`）
+- **Python 文件**: snake_case（如 `builder.py`, `protocol.py`）
+- **配置文件**: 小写无扩展名约定（如 `AGENT.md`, `SKILL.md`）
+
+#### 变量命名
+
+- **私有属性**: `_` 前缀（如 `_messages`, `_tools`, `_config`）
+- **常量**: UPPER_CASE 或 snake_case（如 `MAX_ITERATIONS` 或 `max_iterations`）
+- **函数**: snake_case（如 `load_tools`, `build_system_prompt`）
+- **类**: PascalCase（如 `Session`, `SessionConfig`, `WorkspaceManager`）
+
+#### 数据库/JSON 字段
+
+- **snake_case**: 与 Python 保持一致（如 `session_id`, `created_at`）
