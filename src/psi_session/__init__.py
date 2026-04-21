@@ -4,6 +4,7 @@ import asyncio
 import importlib.util
 import inspect
 import json
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -24,7 +25,7 @@ class SessionConfig(BaseModel):
     workspace_path: str
     channel_socket: str
     ai_socket: str
-    session_id: str = "default"
+    session_id: str | None = None
     max_iterations: int = 10
 
 
@@ -51,14 +52,16 @@ class Session:
     def __init__(self, config: SessionConfig) -> None:
         self._config = config
         self._workspace_path = Path(config.workspace_path).resolve()
-        self._db_path = self._workspace_path / "state" / f"session-{config.session_id}.db"
+        # Generate uuid if session_id not provided (no history by default)
+        self._session_id = config.session_id or uuid.uuid4().hex[:8]
+        self._db_path = self._workspace_path / "state" / f"session-{self._session_id}.db"
         self._messages: list[dict[str, Any]] = []
         self._tools: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {}
         self._tools_schema: list[dict[str, Any]] = []
         self._skills_index: list[dict[str, str]] = []
         self._builder_module: Any = None
 
-        logger.info(f"Session initialized | id={config.session_id} | workspace={self._workspace_path}")
+        logger.info(f"Session initialized | id={self._session_id} | workspace={self._workspace_path}")
         logger.debug(f"Session config | channel={config.channel_socket} | ai={config.ai_socket}")
 
     async def init_db(self) -> None:
@@ -463,7 +466,7 @@ async def run_session(
         workspace_path: Path to workspace directory
         channel_socket: Unix socket path for channel connections
         ai_socket: Unix socket path for AI caller
-        session_id: Optional session identifier
+        session_id: Optional session identifier (default: auto-generated uuid, no history)
         log_level: Log level (DEBUG, INFO, WARNING, ERROR)
     """
     _setup_logger(log_level)
@@ -471,7 +474,7 @@ async def run_session(
         workspace_path=workspace_path,
         channel_socket=channel_socket,
         ai_socket=ai_socket,
-        session_id=session_id or "default",
+        session_id=session_id,
     )
     session = Session(config)
     await session.run()

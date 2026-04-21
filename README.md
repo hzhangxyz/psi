@@ -85,9 +85,16 @@ uv run psi-ai-openai --session-socket ./ai.sock \
 
 **终端 2 - 启动 Session:**
 ```bash
+# 默认：自动生成 session_id，无历史记录
 uv run psi-session --workspace ./examples/simple_example \
     --channel-socket ./channel.sock \
     --ai-socket ./ai.sock
+
+# 指定 session_id：继续历史记录
+uv run psi-session --workspace ./examples/simple_example \
+    --channel-socket ./channel.sock \
+    --ai-socket ./ai.sock \
+    --session-id main
 ```
 
 **终端 3 - 启动 TUI:**

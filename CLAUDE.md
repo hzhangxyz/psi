@@ -85,7 +85,15 @@ Session 接收用户消息后：
 使用 pydantic BaseModel：
 - `LLMRequest`/`LLMResponse`: LLM 通信
 - `ToolResult`: 工具结果
-- `SnapshotEntry`/`Manifest`: 快照元数据
+- `DeltaInfo`/`Manifest`/`MountInfo`: Workspace 元数据
+
+## Session 默认行为
+
+Session 默认使用自动生成的 uuid 作为 session_id，因此：
+- **不提供 session_id 时**：每次启动都是新 session，无历史记录
+- **提供 session_id 时**：继续该 session 的历史（如 `--session-id main`）
+
+这是为了让"默认行为无历史"更符合直觉。
 
 ## 开发
 

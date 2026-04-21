@@ -50,6 +50,12 @@ psi-ai-openai --session-socket ./ai.sock \
 
 启动：
 ```bash
+# 默认：自动生成 session_id，无历史记录
+psi-session --workspace ./workspace \
+            --channel-socket ./channel.sock \
+            --ai-socket ./ai.sock
+
+# 指定 session_id：继续历史记录
 psi-session --workspace ./workspace \
             --channel-socket ./channel.sock \
             --ai-socket ./ai.sock \
