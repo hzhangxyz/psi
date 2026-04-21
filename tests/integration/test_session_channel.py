@@ -202,7 +202,7 @@ class TestSessionChannelIntegration:
         db_path = session_server._db_path
         async with aiosqlite.connect(db_path) as db:
             cursor = await db.execute("SELECT role, content FROM messages ORDER BY id")
-            rows = await cursor.fetchall()
+            rows = list(await cursor.fetchall())
 
         # Should have at least user and assistant messages
         assert len(rows) >= 2
@@ -232,6 +232,8 @@ class TestSessionWithRealAI:
         (workspace / "AGENT.md").write_text("You are a helpful assistant. Be concise.")
 
         # Start AI server
+        # API_KEY is guaranteed to be set due to pytestmark skipif
+        assert API_KEY is not None
         ai_caller = AICaller(
             session_socket=ai_socket,
             api_key=API_KEY,

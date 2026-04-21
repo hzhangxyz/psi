@@ -381,6 +381,8 @@ GitHub Actions 自动测试配置见 `.github/workflows/test.yml`，在 push 和
 
 ## 15. 代码质量
 
+本仓库使用 **ruff** 进行 lint 和格式化，**ty** 进行类型检查。
+
 使用 ruff 进行 lint 和格式化：
 
 ```bash

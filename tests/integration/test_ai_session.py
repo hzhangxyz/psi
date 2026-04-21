@@ -28,6 +28,8 @@ pytestmark = pytest.mark.skipif(
 async def ai_server(tmp_path):
     """Start AI Caller server."""
     socket_path = str(tmp_path / "ai.sock")
+    # API_KEY is guaranteed to be set due to pytestmark skipif
+    assert API_KEY is not None
     caller = AICaller(
         session_socket=socket_path,
         api_key=API_KEY,

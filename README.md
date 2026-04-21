@@ -42,6 +42,8 @@ uv sync --all-extras
 
 ## 开发
 
+本仓库使用 **ruff** (lint/格式化) 和 **ty** (类型检查) 进行代码质量控制。
+
 **Lint 检查:**
 ```bash
 uv run ruff check examples/ tests/ src/
