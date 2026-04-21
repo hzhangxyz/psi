@@ -85,14 +85,7 @@ class WorkspaceManager:
         )
         await proc.wait()
         if proc.returncode != 0:
-            logger.warning("fusermount failed, trying lazy unmount")
-            proc = await asyncio.create_subprocess_exec(
-                "fusermount",
-                "-u",
-                "-z",
-                str(mount_point),
-            )
-            await proc.wait()
+            raise RuntimeError(f"fusermount failed with code {proc.returncode}")
         logger.info(f"FUSE unmounted | path={mount_point}")
 
     async def _mount_overlay(
