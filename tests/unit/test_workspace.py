@@ -264,3 +264,68 @@ class TestWorkspaceFUSE:
 
             with pytest.raises(RuntimeError):
                 await manager.create(str(Path(tmpdir) / "nonexistent"), str(Path(tmpdir) / "out.sqfs"))
+
+    @pytest.mark.asyncio
+    async def test_snapshot_without_changes(self):
+        """Test snapshot when no changes exist (upper_dir missing)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a fake workspace structure without upper_dir
+            workspace_dir = Path(tmpdir) / "workspace"
+            workspace_dir.mkdir()
+            snapshot_path = Path(tmpdir) / "empty.sqfs"
+
+            manager = WorkspaceManager()
+            # Should return early without creating snapshot
+            await manager.snapshot(str(workspace_dir), str(snapshot_path))
+
+            # Snapshot should not exist
+            assert not snapshot_path.exists()
+
+    def test_list_snapshots_empty(self, capsys):
+        """Test listing snapshots when manifest doesn't exist."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace_dir = Path(tmpdir) / "workspace"
+            workspace_dir.mkdir()
+
+            manager = WorkspaceManager()
+            manager.list_snapshots(str(workspace_dir))
+
+            captured = capsys.readouterr()
+            assert "No snapshots found" in captured.out
+
+    def test_list_snapshots_with_entries(self, capsys):
+        """Test listing snapshots with entries."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace_dir = Path(tmpdir) / "workspace"
+            workspace_dir.mkdir()
+
+            manifest_path = Path(tmpdir) / "manifest.json"
+            manager = WorkspaceManager()
+            manager._add_snapshot(manifest_path, "v1.sqfs", "first snapshot")
+            manager._add_snapshot(manifest_path, "v2.sqfs", "second snapshot")
+
+            manager.list_snapshots(str(workspace_dir))
+
+            captured = capsys.readouterr()
+            assert "v1.sqfs" in captured.out
+            assert "v2.sqfs" in captured.out
+            assert "first snapshot" in captured.out
+            assert "second snapshot" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_unmount_without_lower(self):
+        """Test unmount when lower_dir doesn't exist."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_dir = Path(tmpdir) / "source"
+            squashfs_path = Path(tmpdir) / "base.sqfs"
+            workspace_dir = Path(tmpdir) / "workspace"
+
+            source_dir.mkdir()
+            (source_dir / "AGENT.md").write_text("Test")
+
+            manager = WorkspaceManager()
+            await manager.create(str(source_dir), str(squashfs_path))
+            await manager.mount(str(squashfs_path), str(workspace_dir))
+
+            # Unmount should work even if lower_dir check fails
+            await manager.unmount(str(workspace_dir))
