@@ -10,6 +10,8 @@ from loguru import logger
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 
+from psi_common import AssistantMessage, UserMessage
+
 
 class Channel:
     """Terminal UI channel for user interaction."""
@@ -45,8 +47,8 @@ class Channel:
                 if not user_input:
                     continue
 
-                message = {"role": "user", "content": user_input}
-                writer.write((json.dumps(message) + "\n").encode())
+                message = UserMessage(content=user_input)
+                writer.write((message.model_dump_json() + "\n").encode())
                 await writer.drain()
                 logger.debug(f"Message sent to session | content={user_input[:50]}")
 
@@ -56,9 +58,9 @@ class Channel:
                     print("Session disconnected.")
                     break
 
-                response = json.loads(data.decode())
-                logger.debug(f"Response received | length={len(response.get('content', ''))}")
-                print(f"Assistant: {response.get('content', '')}")
+                response = AssistantMessage.model_validate(json.loads(data.decode()))
+                logger.debug(f"Response received | length={len(response.content)}")
+                print(f"Assistant: {response.content}")
 
             except KeyboardInterrupt:
                 logger.info("User interrupted with Ctrl+C")

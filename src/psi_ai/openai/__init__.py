@@ -39,44 +39,32 @@ class AICaller:
             logger.debug("Empty request received")
             return
 
-        request_data = json.loads(data.decode())
-        request = LLMRequest.model_validate(request_data)
-        request_id = request.id
-        messages = request.messages
-        tools = request.tools
-        tool_choice = request.tool_choice
-        stream = request.stream
+        request = LLMRequest.model_validate(json.loads(data.decode()))
+        logger.info(
+            f"Request received | id={request.id} | stream={request.stream} | message_count={len(request.messages)}"
+        )
+        logger.debug(f"Request details | has_tools={request.tools is not None} | tool_choice={request.tool_choice}")
 
-        logger.info(f"Request received | id={request_id} | stream={stream} | message_count={len(messages)}")
-        logger.debug(f"Request details | has_tools={tools is not None} | tool_choice={tool_choice}")
-
-        if stream:
-            await self._handle_stream(request_id, messages, tools, tool_choice, writer)
+        if request.stream:
+            await self._handle_stream(request, writer)
         else:
-            await self._handle_non_stream(request_id, messages, tools, tool_choice, writer)
+            await self._handle_non_stream(request, writer)
 
         writer.close()
         await writer.wait_closed()
 
-    async def _handle_stream(
-        self,
-        request_id: str,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None,
-        tool_choice: str,
-        writer: asyncio.StreamWriter,
-    ) -> None:
+    async def _handle_stream(self, request: LLMRequest, writer: asyncio.StreamWriter) -> None:
         """Handle streaming request."""
-        logger.debug(f"Starting stream | request_id={request_id}")
+        logger.debug(f"Starting stream | request_id={request.id}")
 
         kwargs: dict[str, Any] = {
             "model": self._model,
-            "messages": messages,
+            "messages": request.messages,
             "stream": True,
         }
-        if tools:
-            kwargs["tools"] = tools
-            kwargs["tool_choice"] = tool_choice
+        if request.tools:
+            kwargs["tools"] = request.tools
+            kwargs["tool_choice"] = request.tool_choice
 
         stream = await self._client.chat.completions.create(**kwargs)
         chunk_count = 0
@@ -84,44 +72,37 @@ class AICaller:
         async for chunk in stream:
             chunk_count += 1
             chunk_data = chunk.model_dump()
-            response = LLMResponse(id=request_id, choices=chunk_data.get("choices", []))
+            response = LLMResponse(id=request.id, choices=chunk_data.get("choices", []))
             writer.write((response.model_dump_json() + "\n").encode())
             await writer.drain()
 
         # Send done marker
-        done_response = LLMResponse(id=request_id, choices=[], done=True)
+        done_response = LLMResponse(id=request.id, choices=[], done=True)
         writer.write((done_response.model_dump_json() + "\n").encode())
         await writer.drain()
 
-        logger.info(f"Stream complete | request_id={request_id} | chunks={chunk_count}")
+        logger.info(f"Stream complete | request_id={request.id} | chunks={chunk_count}")
 
-    async def _handle_non_stream(
-        self,
-        request_id: str,
-        messages: list[dict[str, Any]],
-        tools: list[dict[str, Any]] | None,
-        tool_choice: str,
-        writer: asyncio.StreamWriter,
-    ) -> None:
+    async def _handle_non_stream(self, request: LLMRequest, writer: asyncio.StreamWriter) -> None:
         """Handle non-streaming request."""
-        logger.debug(f"Starting non-stream request | request_id={request_id}")
+        logger.debug(f"Starting non-stream request | request_id={request.id}")
 
         kwargs: dict[str, Any] = {
             "model": self._model,
-            "messages": messages,
+            "messages": request.messages,
         }
-        if tools:
-            kwargs["tools"] = tools
-            kwargs["tool_choice"] = tool_choice
+        if request.tools:
+            kwargs["tools"] = request.tools
+            kwargs["tool_choice"] = request.tool_choice
 
         response = await self._client.chat.completions.create(**kwargs)
         response_data = response.model_dump()
-        llm_response = LLMResponse(id=request_id, choices=response_data.get("choices", []))
+        llm_response = LLMResponse(id=request.id, choices=response_data.get("choices", []))
         writer.write((llm_response.model_dump_json() + "\n").encode())
         await writer.drain()
 
         content = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        logger.info(f"Non-stream complete | request_id={request_id} | response_length={len(content)}")
+        logger.info(f"Non-stream complete | request_id={request.id} | response_length={len(content)}")
 
     async def run(self) -> None:
         """Start the Unix socket server."""

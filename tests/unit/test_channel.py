@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from psi_channel.tui import Channel, run_channel
+from psi_common import AssistantMessage, UserMessage
 
 
 @pytest.fixture
@@ -39,8 +40,8 @@ class TestChannelRun:
         mock_writer.close = MagicMock()
         mock_writer.wait_closed = AsyncMock()
 
-        response = {"role": "assistant", "content": "Hello back!"}
-        mock_reader.feed_data((json.dumps(response) + "\n").encode())
+        response = AssistantMessage(content="Hello back!")
+        mock_reader.feed_data((response.model_dump_json() + "\n").encode())
         mock_reader.feed_eof()
 
         mock_prompt_session = MagicMock()
@@ -54,9 +55,9 @@ class TestChannelRun:
 
         assert mock_writer.write.called
         sent_data = mock_writer.write.call_args[0][0]
-        sent_message = json.loads(sent_data.decode())
-        assert sent_message["role"] == "user"
-        assert sent_message["content"] == "Hello"
+        sent_message = UserMessage.model_validate(json.loads(sent_data.decode()))
+        assert sent_message.role == "user"
+        assert sent_message.content == "Hello"
 
         captured = capsys.readouterr()
         assert "Hello back!" in captured.out
@@ -121,8 +122,8 @@ class TestChannelRun:
         mock_prompt_session = MagicMock()
         mock_prompt_session.prompt_async = AsyncMock(side_effect=["", "Hello", KeyboardInterrupt])
 
-        response = {"role": "assistant", "content": "Response"}
-        mock_reader.feed_data((json.dumps(response) + "\n").encode())
+        response = AssistantMessage(content="Response")
+        mock_reader.feed_data((response.model_dump_json() + "\n").encode())
 
         with (
             patch("asyncio.open_unix_connection", return_value=(mock_reader, mock_writer)),

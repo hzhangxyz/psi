@@ -85,7 +85,12 @@ Session 接收用户消息后：
 使用 pydantic BaseModel：
 - `LLMRequest`/`LLMResponse`: LLM 通信
 - `ToolResult`: 工具结果
+- `UserMessage`/`AssistantMessage`: Channel ↔ Session 通信
 - `DeltaInfo`/`Manifest`/`MountInfo`: Workspace 元数据
+
+**模型使用约定**:
+- 所有协议通信应使用定义的模型（如 Channel 使用 `UserMessage`/`AssistantMessage` 而非 raw dict）
+- 内部方法传递完整对象而非逐个提取字段
 
 ## Session 默认行为
 
@@ -204,7 +209,8 @@ run_list("./workspace")
 - **缓存复用**: 重复加载的资源缓存（如 `_builder_module`）
 - **参数类型一致**: 私有方法参数类型应统一（如全部用 `Path` 而非混用 `str` 和 `Path`)
 - **参数命名一致**: 内部变量名与参数名保持一致（如 `source_dir` → `source_dir`，不要改成 `source`）
-- **数据模型统一**: 同一模块内的相似操作应使用相同的数据模型（如 `_handle_stream` 和 `_handle_non_stream` 都用 `LLMResponse`)
+- **数据模型统一**: 同一模块内的相似操作应使用相同的数据模型（如 `_handle_stream` 和 `_handle_non_stream` 都用 `LLMRequest` 对象）
+- **传递对象而非字段**: 内部方法应传递完整的 request/response 对象，而非逐个提取字段传递（避免 adhoc 参数列表）
 
 ### 代码组织
 
