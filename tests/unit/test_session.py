@@ -635,6 +635,44 @@ class TestSessionStreamResponse:
 
 
 # ============================================================================
+# ReAct Loop Tests
+# ============================================================================
+
+
+class TestSessionReActLoop:
+    """Test Session ReAct loop."""
+
+    @pytest.mark.asyncio
+    async def test_max_iterations_exceeded(self, session, temp_workspace):
+        """Test ReAct loop exceeds max iterations."""
+        await session.init_db()
+
+        # Create a tool that always returns success
+        (temp_workspace / "tools" / "loop_tool.py").write_text("""
+async def run(params, workspace_path):
+    return {"success": True, "content": "Tool executed"}
+""")
+        session.load_tools()
+
+        # Mock call_llm to always return tool_calls
+        with patch.object(session, "call_llm", new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"id": "call-1", "function": {"name": "loop_tool", "arguments": "{}"}}
+                ],
+            }
+
+            user_message = {"role": "user", "content": "Test"}
+            result = await session.run_react_loop(user_message)
+
+            assert "Maximum iterations exceeded" in result
+            # Should have called call_llm max_iterations times
+            assert mock_call.call_count == session._config.max_iterations
+
+
+# ============================================================================
 # Run Session Tests
 # ============================================================================
 

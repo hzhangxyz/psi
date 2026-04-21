@@ -58,10 +58,21 @@ class TestAICallerRequestHandling:
 
     @pytest.mark.asyncio
     async def test_handle_empty_request(self, ai_caller):
-        """Test handling empty request."""
-        # Empty request handling is a simple early return
-        # No need to test socket communication details
-        pass  # Verified by integration tests
+        """Test handling empty request returns early."""
+        reader = asyncio.StreamReader()
+        writer = MagicMock()
+        writer.write = MagicMock()
+        writer.drain = AsyncMock()
+        writer.close = MagicMock()
+        writer.wait_closed = AsyncMock()
+
+        # Feed empty data (EOF immediately)
+        reader.feed_eof()
+
+        await ai_caller.handle_client(reader, writer)
+
+        # Empty request should return early without calling API
+        assert not writer.write.called
 
     @pytest.mark.asyncio
     async def test_handle_valid_request(self, ai_caller):

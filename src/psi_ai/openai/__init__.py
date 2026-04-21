@@ -94,27 +94,22 @@ class AICaller:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice
 
-        try:
-            stream = await self._client.chat.completions.create(**kwargs)
-            chunk_count = 0
+        stream = await self._client.chat.completions.create(**kwargs)
+        chunk_count = 0
 
-            async for chunk in stream:
-                chunk_count += 1
-                chunk_data = chunk.model_dump()
-                response = LLMResponse(id=request_id, choices=chunk_data.get("choices", []))
-                writer.write((response.model_dump_json() + "\n").encode())
-                await writer.drain()
-
-            # Send done marker
-            done_response = LLMResponse(id=request_id, choices=[], done=True)
-            writer.write((done_response.model_dump_json() + "\n").encode())
+        async for chunk in stream:
+            chunk_count += 1
+            chunk_data = chunk.model_dump()
+            response = LLMResponse(id=request_id, choices=chunk_data.get("choices", []))
+            writer.write((response.model_dump_json() + "\n").encode())
             await writer.drain()
 
-            logger.info(f"Stream complete | request_id={request_id} | chunks={chunk_count}")
+        # Send done marker
+        done_response = LLMResponse(id=request_id, choices=[], done=True)
+        writer.write((done_response.model_dump_json() + "\n").encode())
+        await writer.drain()
 
-        except Exception as e:
-            logger.error(f"Stream error | request_id={request_id} | error={e}")
-            raise
+        logger.info(f"Stream complete | request_id={request_id} | chunks={chunk_count}")
 
     async def _handle_non_stream(
         self,
@@ -135,19 +130,14 @@ class AICaller:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice
 
-        try:
-            response = await self._client.chat.completions.create(**kwargs)
-            response_data = response.model_dump()
-            llm_response = LLMResponse(id=request_id, choices=response_data.get("choices", []))
-            writer.write((llm_response.model_dump_json() + "\n").encode())
-            await writer.drain()
+        response = await self._client.chat.completions.create(**kwargs)
+        response_data = response.model_dump()
+        llm_response = LLMResponse(id=request_id, choices=response_data.get("choices", []))
+        writer.write((llm_response.model_dump_json() + "\n").encode())
+        await writer.drain()
 
-            content = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            logger.info(f"Non-stream complete | request_id={request_id} | response_length={len(content)}")
-
-        except Exception as e:
-            logger.error(f"Non-stream error | request_id={request_id} | error={e}")
-            raise
+        content = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        logger.info(f"Non-stream complete | request_id={request_id} | response_length={len(content)}")
 
     async def run(self) -> None:
         """Start the Unix socket server."""

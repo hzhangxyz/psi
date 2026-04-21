@@ -264,28 +264,23 @@ class Session:
         filtered_messages = self._filter_messages(messages)
         logger.debug(f"Calling LLM | message_count={len(filtered_messages)}")
 
-        try:
-            reader, writer = await asyncio.open_unix_connection(self._config.ai_socket)
-            logger.debug("Connected to LLM socket")
+        reader, writer = await asyncio.open_unix_connection(self._config.ai_socket)
+        logger.debug("Connected to LLM socket")
 
-            request = LLMRequest(
-                id=f"req-{len(self._messages)}",
-                messages=filtered_messages,
-                tools=self._tools_schema,
-                tool_choice="auto",
-                stream=True,
-            )
+        request = LLMRequest(
+            id=f"req-{len(self._messages)}",
+            messages=filtered_messages,
+            tools=self._tools_schema,
+            tool_choice="auto",
+            stream=True,
+        )
 
-            writer.write((request.model_dump_json() + "\n").encode())
-            await writer.drain()
+        writer.write((request.model_dump_json() + "\n").encode())
+        await writer.drain()
 
-            result = await self._read_stream_response(reader, writer)
-            logger.debug(f"LLM response received | has_tool_calls={result.get('tool_calls') is not None}")
-            return result
-
-        except Exception as e:
-            logger.error(f"LLM connection error | error={e}")
-            return {"role": "assistant", "content": f"Connection error: {e}"}
+        result = await self._read_stream_response(reader, writer)
+        logger.debug(f"LLM response received | has_tool_calls={result.get('tool_calls') is not None}")
+        return result
 
     def _filter_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Filter out invalid tool_calls from messages."""
@@ -308,45 +303,40 @@ class Session:
         final_message: dict[str, Any] = {"role": "assistant", "content": ""}
         tool_calls: list[dict[str, Any]] = []
 
-        try:
-            while True:
-                data = await reader.readline()
-                if not data:
-                    break
-                response = json.loads(data.decode())
-                if response.get("done"):
-                    break
+        while True:
+            data = await reader.readline()
+            if not data:
+                break
+            response = json.loads(data.decode())
+            if response.get("done"):
+                break
 
-                choices = response.get("choices", [])
-                if not choices:
-                    continue
-                delta = choices[0].get("delta", {})
-                if not delta:
-                    continue
+            choices = response.get("choices", [])
+            if not choices:
+                continue
+            delta = choices[0].get("delta", {})
+            if not delta:
+                continue
 
-                content = delta.get("content")
-                if content:
-                    final_message["content"] += content
+            content = delta.get("content")
+            if content:
+                final_message["content"] += content
 
-                tc_list = delta.get("tool_calls")
-                if tc_list:
-                    for tc_delta in tc_list:
-                        idx = tc_delta.get("index", 0)
-                        while idx >= len(tool_calls):
-                            tool_calls.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
-                        if tc_delta.get("id"):
-                            tool_calls[idx]["id"] = tc_delta["id"]
-                        func = tc_delta.get("function")
-                        if func:
-                            name = func.get("name")
-                            if name and name != "null":
-                                tool_calls[idx]["function"]["name"] = name
-                            if func.get("arguments"):
-                                tool_calls[idx]["function"]["arguments"] += func["arguments"]
-
-        except Exception as e:
-            logger.error(f"Stream error | error={e}")
-            final_message["content"] = f"Stream error: {e}"
+            tc_list = delta.get("tool_calls")
+            if tc_list:
+                for tc_delta in tc_list:
+                    idx = tc_delta.get("index", 0)
+                    while idx >= len(tool_calls):
+                        tool_calls.append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                    if tc_delta.get("id"):
+                        tool_calls[idx]["id"] = tc_delta["id"]
+                    func = tc_delta.get("function")
+                    if func:
+                        name = func.get("name")
+                        if name and name != "null":
+                            tool_calls[idx]["function"]["name"] = name
+                        if func.get("arguments"):
+                            tool_calls[idx]["function"]["arguments"] += func["arguments"]
 
         writer.close()
         await writer.wait_closed()
@@ -368,13 +358,9 @@ class Session:
             logger.error(f"Tool not found | name={tool_name}")
             return ToolResult(success=False, error=f"Tool '{tool_name}' not found").model_dump()
 
-        try:
-            result = await self._tools[tool_name](params, str(self._workspace_path))
-            logger.debug(f"Tool result | success={result.get('success')}")
-            return result
-        except Exception as e:
-            logger.error(f"Tool execution error | name={tool_name} | error={e}")
-            return ToolResult(success=False, error=str(e)).model_dump()
+        result = await self._tools[tool_name](params, str(self._workspace_path))
+        logger.debug(f"Tool result | success={result.get('success')}")
+        return result
 
     async def run_react_loop(self, user_message: dict[str, Any]) -> str:
         """Run ReAct loop for a user message."""
@@ -392,12 +378,7 @@ class Session:
             llm_messages = [{"role": "system", "content": system_prompt}] + messages
 
             response = await self.call_llm(llm_messages)
-            if not response:
-                return "Error: No response from LLM"
-
             content = response.get("content", "")
-            if content.startswith("Connection error:") or content.startswith("Stream error:"):
-                return content
 
             assistant_message: dict[str, Any] = {"role": "assistant"}
             if content:
