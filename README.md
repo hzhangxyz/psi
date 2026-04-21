@@ -127,9 +127,9 @@ sudo apt install squashfuse fuse-overlayfs squashfs-tools
 
 ```python
 import asyncio
-from psi_session import run_session
-from psi_ai.openai import run_ai
-from psi_workspace import run_create, run_mount, run_umount, run_snapshot
+from psi_agent.session import run_session
+from psi_agent.ai.openai import run_ai
+from psi_agent.workspace import run_create, run_mount, run_umount, run_snapshot
 
 async def main():
     # 创建初始 squashfs

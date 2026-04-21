@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from psi_workspace import DeltaInfo, Manifest, MountInfo, WorkspaceManager
+from psi_agent.workspace import DeltaInfo, Manifest, MountInfo, WorkspaceManager
 
 # Check if FUSE tools are available
 FUSE_AVAILABLE = all(
@@ -340,7 +340,7 @@ class TestRunFunctions:
     @pytest.mark.asyncio
     async def test_run_create(self):
         """Test run_create function."""
-        from psi_workspace import run_create
+        from psi_agent.workspace import run_create
 
         with tempfile.TemporaryDirectory() as tmpdir:
             source_dir = Path(tmpdir) / "source"
@@ -356,7 +356,7 @@ class TestRunFunctions:
     @pytest.mark.asyncio
     async def test_run_mount_umount(self):
         """Test run_mount and run_umount functions."""
-        from psi_workspace import run_create, run_mount, run_umount
+        from psi_agent.workspace import run_create, run_mount, run_umount
 
         with tempfile.TemporaryDirectory() as tmpdir:
             source_dir = Path(tmpdir) / "source"
@@ -374,7 +374,7 @@ class TestRunFunctions:
     @pytest.mark.asyncio
     async def test_run_snapshot(self):
         """Test run_snapshot function."""
-        from psi_workspace import run_create, run_mount, run_snapshot, run_umount
+        from psi_agent.workspace import run_create, run_mount, run_snapshot, run_umount
 
         with tempfile.TemporaryDirectory() as tmpdir:
             source_dir = Path(tmpdir) / "source"

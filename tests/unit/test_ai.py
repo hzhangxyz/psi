@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from psi_ai.openai import AICaller, run_ai
-from psi_common.protocol import LLMRequest, LLMResponse
+from psi_agent.ai.openai import AICaller, run_ai
+from psi_agent.common.protocol import LLMRequest, LLMResponse
 
 
 @pytest.fixture
@@ -202,7 +202,7 @@ class TestRunAI:
         """Test run_ai creates AICaller correctly."""
         socket_path = str(tmp_path / "test.sock")
 
-        with patch("psi_ai.openai.AICaller") as mock_caller_class:
+        with patch("psi_agent.ai.openai.AICaller") as mock_caller_class:
             mock_caller = AsyncMock()
             mock_caller_class.return_value = mock_caller
 

@@ -1,5 +1,5 @@
 [project]
-name = "psi"
+name = "psi-agent"
 version = "0.0.1"
 description = "Psi Agent Platform - portable, composable AI agents"
 requires-python = ">=3.10"
@@ -22,20 +22,20 @@ dev = [
 ]
 
 [project.scripts]
-psi-session = "psi_session:main"
-psi-channel-tui = "psi_channel.tui:main"
-psi-ai-openai = "psi_ai.openai:main"
-psi-workspace-create = "psi_workspace:main_create"
-psi-workspace-mount = "psi_workspace:main_mount"
-psi-workspace-umount = "psi_workspace:main_umount"
-psi-workspace-snapshot = "psi_workspace:main_snapshot"
+psi-session = "psi_agent.session:main"
+psi-channel-tui = "psi_agent.channel.tui:main"
+psi-ai-openai = "psi_agent.ai.openai:main"
+psi-workspace-create = "psi_agent.workspace:main_create"
+psi-workspace-mount = "psi_agent.workspace:main_mount"
+psi-workspace-umount = "psi_agent.workspace:main_umount"
+psi-workspace-snapshot = "psi_agent.workspace:main_snapshot"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/psi_session", "src/psi_channel", "src/psi_ai", "src/psi_workspace", "src/psi_common"]
+packages = ["src/psi_agent"]
 
 [tool.ruff]
 line-length = 120
@@ -46,7 +46,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
 ignore = ["E501"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["psi_session", "psi_channel", "psi_ai", "psi_workspace", "psi_common"]
+known-first-party = ["psi_agent"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from psi_common.protocol import LLMRequest, ToolResult
-from psi_session import (
+from psi_agent.common.protocol import LLMRequest, ToolResult
+from psi_agent.session import (
     Session,
     SessionConfig,
     _is_valid_tool_call_name,
@@ -774,7 +774,7 @@ class TestRunSession:
         channel_socket = str(temp_socket_dir / "channel.sock")
         ai_socket = str(temp_socket_dir / "ai.sock")
 
-        with patch("psi_session.Session") as mock_session_class:
+        with patch("psi_agent.session.Session") as mock_session_class:
             mock_session = AsyncMock()
             mock_session_class.return_value = mock_session
 

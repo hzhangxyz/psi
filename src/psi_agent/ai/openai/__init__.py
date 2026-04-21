@@ -12,7 +12,7 @@ import tyro
 from loguru import logger
 from openai import AsyncOpenAI
 
-from psi_common import LLMRequest, LLMResponse
+from psi_agent.common import LLMRequest, LLMResponse
 
 
 class AICaller:

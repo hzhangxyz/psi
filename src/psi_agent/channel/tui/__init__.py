@@ -10,7 +10,7 @@ from loguru import logger
 from prompt_toolkit import PromptSession
 from prompt_toolkit.styles import Style
 
-from psi_common import AssistantMessage, UserMessage
+from psi_agent.common import AssistantMessage, UserMessage
 
 
 class Channel:

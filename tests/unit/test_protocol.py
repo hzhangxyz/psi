@@ -1,6 +1,6 @@
 """Tests for psi_common protocol models."""
 
-from psi_common.protocol import AssistantMessage, LLMRequest, LLMResponse, ToolResult, UserMessage
+from psi_agent.common.protocol import AssistantMessage, LLMRequest, LLMResponse, ToolResult, UserMessage
 
 
 def test_llm_request_basic():

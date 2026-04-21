@@ -16,7 +16,7 @@ import tyro
 from loguru import logger
 from pydantic import BaseModel
 
-from psi_common import LLMRequest, ToolResult
+from psi_agent.common import LLMRequest, ToolResult
 
 
 class SessionConfig(BaseModel):

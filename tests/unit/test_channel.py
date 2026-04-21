@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from psi_channel.tui import Channel, run_channel
-from psi_common import AssistantMessage, UserMessage
+from psi_agent.channel.tui import Channel, run_channel
+from psi_agent.common import AssistantMessage, UserMessage
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ class TestChannelRun:
 
         with (
             patch("asyncio.open_unix_connection", return_value=(mock_reader, mock_writer)),
-            patch("psi_channel.tui.PromptSession", return_value=mock_prompt_session),
+            patch("psi_agent.channel.tui.PromptSession", return_value=mock_prompt_session),
         ):
             await channel.run()
 
@@ -79,7 +79,7 @@ class TestChannelRun:
 
         with (
             patch("asyncio.open_unix_connection", return_value=(mock_reader, mock_writer)),
-            patch("psi_channel.tui.PromptSession", return_value=mock_prompt_session),
+            patch("psi_agent.channel.tui.PromptSession", return_value=mock_prompt_session),
         ):
             await channel.run()
 
@@ -103,7 +103,7 @@ class TestChannelRun:
 
         with (
             patch("asyncio.open_unix_connection", return_value=(mock_reader, mock_writer)),
-            patch("psi_channel.tui.PromptSession", return_value=mock_prompt_session),
+            patch("psi_agent.channel.tui.PromptSession", return_value=mock_prompt_session),
         ):
             await channel.run()
 
@@ -127,7 +127,7 @@ class TestChannelRun:
 
         with (
             patch("asyncio.open_unix_connection", return_value=(mock_reader, mock_writer)),
-            patch("psi_channel.tui.PromptSession", return_value=mock_prompt_session),
+            patch("psi_agent.channel.tui.PromptSession", return_value=mock_prompt_session),
         ):
             await channel.run()
 
@@ -152,7 +152,7 @@ class TestChannelRun:
 
         with (
             patch("asyncio.open_unix_connection", return_value=(mock_reader, mock_writer)),
-            patch("psi_channel.tui.PromptSession", return_value=mock_prompt_session),
+            patch("psi_agent.channel.tui.PromptSession", return_value=mock_prompt_session),
         ):
             await channel.run()
 
@@ -166,7 +166,7 @@ class TestRunChannel:
     @pytest.mark.asyncio
     async def test_run_channel_creates_channel(self, temp_socket_path):
         """Test run_channel creates Channel instance."""
-        with patch("psi_channel.tui.Channel") as mock_channel_class:
+        with patch("psi_agent.channel.tui.Channel") as mock_channel_class:
             mock_channel = AsyncMock()
             mock_channel_class.return_value = mock_channel
 

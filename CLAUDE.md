@@ -24,11 +24,12 @@ uv run psi-channel-tui --session-socket ./channel.sock
 
 ```
 src/
-├── psi_session/        # ReAct 循环引擎（核心）
-├── psi_channel/tui/    # TUI 用户界面
-├── psi_ai/openai/      # OpenAI 兼容 LLM Caller
-├── psi_workspace/      # SquashFS/OverlayFS 管理器
-└── psi_common/         # 共享协议
+├── psi_agent/         # Psi Agent 包
+│   ├── session/       # ReAct 循环引擎（核心）
+│   ├── channel/tui/   # TUI 用户界面
+│   ├── ai/openai/     # OpenAI 兼容 LLM Caller
+│   ├── workspace/     # SquashFS/OverlayFS 管理器
+│   └── common/        # 共享协议
 
 examples/
 └── simple_example/     # 示例 workspace
@@ -63,7 +64,7 @@ Session 接收用户消息后：
 
 - **Let it crash**: 除了网络故障，所有错误都应该让进程 crash
   - 外部网络故障（可优雅处理）：用户连接断开、LLM API 连接问题
-  - 组件间连接（应该 crash）：psi_session <-> psi_ai、psi_channel <-> psi_session 之间的连接应该假设正常工作，出问题就 crash
+  - 组件间连接（应该 crash）：psi_agent.session <-> psi_agent.ai、psi_agent.channel <-> psi_agent.session 之间的连接应该假设正常工作，出问题就 crash
   - 其他错误（应该 crash）：JSON 解析错误、API 错误、业务逻辑错误
 - **绿色可移植**: workspace 可整体复制/移动
 - **组件化**: 独立进程，socket 通信
@@ -151,10 +152,10 @@ psi-workspace-umount ./workspace
 所有模块同时提供 Python function 接口：
 
 ```python
-from psi_session import run_session
-from psi_ai.openai import run_ai
-from psi_channel.tui import run_channel
-from psi_workspace import run_create, run_mount, run_umount, run_snapshot
+from psi_agent.session import run_session
+from psi_agent.ai.openai import run_ai
+from psi_agent.channel.tui import run_channel
+from psi_agent.workspace import run_create, run_mount, run_umount, run_snapshot
 
 # 启动 AI Caller
 await run_ai(
@@ -244,7 +245,7 @@ run_list("./workspace")
 
 #### 文件命名
 
-- **模块目录**: `psi_<name>` 格式（如 `psi_session`, `psi_ai`, `psi_channel`, `psi_workspace`）
+- **模块目录**: `psi_agent/<name>` 格式（如 `psi_agent/session`, `psi_agent/ai`, `psi_agent/channel`, `psi_agent/workspace`）
 - **Python 文件**: snake_case（如 `builder.py`, `protocol.py`）
 - **配置文件**: 小写无扩展名约定（如 `AGENT.md`, `SKILL.md`）
 

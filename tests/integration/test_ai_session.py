@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from psi_ai.openai import AICaller
-from psi_common import LLMRequest
-from psi_session import Session, SessionConfig
+from psi_agent.ai.openai import AICaller
+from psi_agent.common import LLMRequest
+from psi_agent.session import Session, SessionConfig
 
 # Environment variables for API configuration (OpenAI style)
 API_KEY = os.environ.get("OPENAI_API_KEY")

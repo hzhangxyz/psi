@@ -263,13 +263,14 @@ psi/
 ├── CLAUDE.md               # 给 Claude 的项目说明
 ├── .gitignore
 ├── src/
-│   ├── psi_session/       # ReAct 循环引擎
-│   ├── psi_channel/       # Channel 入口
-│   │   └── tui/           # TUI 实现
-│   ├── psi_ai/            # AI 入口
-│   │   └── openai/        # OpenAI 兼容实现
-│   ├── psi_workspace/     # SquashFS/OverlayFS 管理器
-│   └── psi_common/        # 共享协议定义
+│   ├── psi_agent/        # Psi Agent 包
+│   │   ├── session/       # ReAct 循环引擎
+│   │   ├── channel/       # Channel 入口
+│   │   │   └── tui/       # TUI 实现
+│   │   ├── ai/            # AI 入口
+│   │   │   └── openai/    # OpenAI 兼容实现
+│   │   ├── workspace/     # SquashFS/OverlayFS 管理器
+│   │   └── common/        # 共享协议定义
 └── examples/
     └── simple_example/    # 简单示例 workspace
         ├── AGENT.md
@@ -376,7 +377,7 @@ class LLMRequest(BaseModel):
 ```
 
 主要模型：
-- `LLMRequest`/`LLMResponse`: LLM 通信协议（统一定义于 `psi_common`）
+- `LLMRequest`/`LLMResponse`: LLM 通信协议（统一定义于 `psi_agent.common`）
 - `ToolResult`: 工具执行结果
 - `UserMessage`/`AssistantMessage`: 用户/助手消息
 - `DeltaInfo`/`Manifest`/`MountInfo`: Workspace 元数据
@@ -395,10 +396,10 @@ class LLMRequest(BaseModel):
 所有模块提供 Python function 接口（除 CLI 外）：
 
 ```python
-from psi_session import run_session
-from psi_ai.openai import run_ai
-from psi_channel.tui import run_channel
-from psi_workspace import run_create, run_mount, run_umount, run_snapshot
+from psi_agent.session import run_session
+from psi_agent.ai.openai import run_ai
+from psi_agent.channel.tui import run_channel
+from psi_agent.workspace import run_create, run_mount, run_umount, run_snapshot
 
 # 使用示例
 async def main():
@@ -541,7 +542,7 @@ sudo apt install squashfuse fuse-overlayfs squashfs-tools
 
 ### 文件与目录
 
-- 模块目录：`psi_<name>`（如 `psi_session`, `psi_workspace`）
+- 模块目录：`psi_agent/<name>`（如 `psi_agent/session`, `psi_agent/workspace`）
 - Python 文件：snake_case（如 `builder.py`, `protocol.py`）
 - Workspace 配置文件：全大写（如 `AGENT.md`, `SKILL.md`）
 

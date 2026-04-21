@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from psi_session import Session, SessionConfig
+from psi_agent.session import Session, SessionConfig
 
 # Skip if API key not set (needed for full integration)
 API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -216,7 +216,7 @@ class TestSessionWithRealAI:
     @pytest.mark.asyncio
     async def test_full_session_flow(self, tmp_path):
         """Test full session flow with real AI."""
-        from psi_ai.openai import AICaller
+        from psi_agent.ai.openai import AICaller
 
         base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
         model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
