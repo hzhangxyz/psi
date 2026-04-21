@@ -62,3 +62,6 @@ Thumbs.db
 coverage.xml
 htmlcov/
 .pytest_cache/
+
+# SquashFS images
+*.sqfs
