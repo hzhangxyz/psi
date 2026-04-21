@@ -9,7 +9,7 @@
 - **psi-ai-openai**：LLM Caller（OpenAI 兼容），封装大语言模型 API，通过 named socket 暴露接口。
 - **psi-session**：运行 ReAct 循环，管理对话历史，调用工具/技能。
 - **psi-channel-tui**：TUI 用户交互界面。
-- **psi-mount/psi-unmount/psi-snapshot/psi-workspace-list**：SquashFS/OverlayFS 管理器，负责镜像挂载和快照。
+- **psi-workspace-create/psi-workspace-mount/psi-workspace-umount/psi-workspace-snapshot**：SquashFS/OverlayFS 管理器，负责镜像挂载和快照。
 
 **Let it crash**：组件出错时不做复杂恢复，让进程崩溃。简化实现，依赖外部重启机制。不检查依赖是否存在（如 prompt_toolkit），缺失时直接报错退出。
 
@@ -17,7 +17,7 @@
 - `run_session()` - 启动 session
 - `run_ai()` - 启动 AI caller
 - `run_channel()` - 运行 TUI channel
-- `run_mount()`, `run_unmount()`, `run_snapshot()`, `run_list()` - workspace 管理
+- `run_create()`, `run_mount()`, `run_umount()`, `run_snapshot()` - workspace 管理
 
 ## 2. 模块详细定义
 
@@ -321,24 +321,16 @@ async def trim_history(messages: list, limit: int) -> list:
    - 无 tool_calls：追加 assistant 消息，返回文本给 Channel。
 5. 循环上限：10 次。
 
-## 8. 快照历史
+## 8. Delta 层级结构
 
-manifest.json：
-```json
-{
-  "current": {
-    "name": "base.sqfs",
-    "status": "mounted",
-    "mounted_at": "2026-04-20T10:00:00"
-  },
-  "snapshots": [
-    {"name": "v1.sqfs", "description": "first", "created_at": "..."},
-    {"name": "v2.sqfs", "description": "added tool", "created_at": "..."}
-  ]
-}
-```
+每个 SquashFS 镜像包含多个 delta 层，类似 Docker 镜像层级结构：
 
-类似 Docker 层级结构，每个快照基于父镜像。
+- 每个 delta 是一个 UUID 文件夹，包含该版本的文件改动
+- delta 通过 `parent` 字段链接到父版本，形成链条
+- 挂载时使用 OverlayFS 将多个 delta 层叠加，形成完整视图
+- 新版本的改动覆盖旧版本的文件（lowerdir 从新到旧排列）
+
+见 Section 2.4 的 Manifest 结构和 Squashfs 内部结构详解。
 
 ## 9. 不实现的功能
 
@@ -351,15 +343,17 @@ manifest.json：
 
 ## 10. 日志
 
-所有模块（除 psi-channel-tui）使用 loguru 统一日志：
+所有模块使用 loguru 统一日志：
 
 ```
-2026-04-20 18:03:42 | INFO     | session | Session initialized | id=test | workspace=/path
+2026-04-20 18:03:42 | INFO | session | Session initialized | id=test | workspace=/path
 ```
 
 格式：`时间 | 级别 | 模块名 | 消息 | 键值对`
 
 可通过 `--log-level DEBUG/INFO/WARNING/ERROR` 控制日志级别。
+
+**psi-channel-tui 特殊处理**：默认日志级别为 `WARNING`，避免在 TUI 界面显示日志干扰用户体验。
 
 ## 11. 数据模型
 
@@ -379,7 +373,7 @@ class LLMRequest(BaseModel):
 - `LLMRequest`/`LLMResponse`: LLM 通信协议（统一定义于 `psi_common`）
 - `ToolResult`: 工具执行结果
 - `UserMessage`/`AssistantMessage`: 用户/助手消息
-- `SnapshotEntry`/`Manifest`: 快照元数据
+- `DeltaInfo`/`Manifest`/`MountInfo`: Workspace 元数据
 
 ## 12. 异步实现
 
@@ -398,13 +392,14 @@ class LLMRequest(BaseModel):
 from psi_session import run_session
 from psi_ai.openai import run_ai
 from psi_channel.tui import run_channel
-from psi_workspace import run_mount, run_unmount, run_snapshot, run_list
+from psi_workspace import run_create, run_mount, run_umount, run_snapshot
 
 # 使用示例
 async def main():
-    await run_ai(socket="./ai.sock", model="gpt-4o", api_key="...", base_url="...")
-    await run_session(workspace="./workspace", channel_socket="./channel.sock", ai_socket="./ai.sock")
-    await run_channel(session_socket="./channel.sock")
+    await run_create(source_dir="./examples/simple_example", output_path="base.sqfs", tag="base")
+    await run_mount(squashfs_path="base.sqfs", workspace_dir="./workspace")
+    await run_snapshot(workspace_dir="./workspace", output_path="v2.sqfs", tag="v1")
+    await run_umount(workspace_dir="./workspace")
 ```
 
 ## 14. 测试
@@ -485,21 +480,7 @@ def main() -> None:
     ...
 ```
 
-## 17. 日志
-
-所有模块（包括 psi-channel-tui）使用 loguru 统一日志：
-
-```
-2026-04-20 18:03:42 | INFO | session | Session initialized | id=test | workspace=/path
-```
-
-格式：`时间 | 级别 | 模块名 | 消息 | 键值对`
-
-可通过 `--log-level DEBUG/INFO/WARNING/ERROR` 控制日志级别。
-
-**psi-channel-tui 特殊处理**：默认日志级别为 `WARNING`，避免在 TUI 界面显示日志干扰用户体验。
-
-## 18. 依赖
+## 17. 依赖
 
 运行依赖：
 - Python 3.10+
@@ -527,7 +508,7 @@ sudo apt install squashfuse fuse-overlayfs squashfs-tools
 - pytest-asyncio（异步测试）
 - pytest-cov（覆盖率）
 
-## 19. 命名风格
+## 18. 命名风格
 
 ### CLI 参数
 
@@ -565,7 +546,7 @@ sudo apt install squashfuse fuse-overlayfs squashfs-tools
 - 类：PascalCase（如 `Session`, `SessionConfig`）
 - Pydantic model：PascalCase（如 `LLMRequest`, `ToolResult`）
 
-## 20. 设计原则
+## 19. 设计原则
 
 ### Let it Crash
 

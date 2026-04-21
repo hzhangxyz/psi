@@ -60,7 +60,7 @@ async def session(tmp_path, ai_server):
     """Create a session connected to AI server."""
     workspace_path = str(tmp_path / "workspace")
     channel_socket = str(tmp_path / "channel.sock")
-    ai_socket = ai_server.session_socket
+    ai_socket = ai_server._session_socket
 
     # Create minimal workspace
     workspace = Path(workspace_path)
@@ -146,7 +146,7 @@ class TestAISessionIntegration:
         """Test session with tools execution."""
         workspace_path = str(tmp_path / "workspace_tools")
         channel_socket = str(tmp_path / "channel.sock")
-        ai_socket = ai_server.session_socket
+        ai_socket = ai_server._session_socket
 
         # Create workspace with a simple tool
         workspace = Path(workspace_path)
@@ -191,7 +191,7 @@ async def run(params: dict, workspace_path: str) -> dict:
     @pytest.mark.asyncio
     async def test_ai_error_handling(self, ai_server):
         """Test AI caller raises on invalid JSON (let it crash)."""
-        reader, writer = await asyncio.open_unix_connection(ai_server.session_socket)
+        reader, writer = await asyncio.open_unix_connection(ai_server._session_socket)
 
         # Send invalid JSON
         writer.write(b"invalid json\n")
