@@ -188,17 +188,17 @@ async def run(params: dict, workspace_path: str) -> dict:
 
     @pytest.mark.asyncio
     async def test_ai_error_handling(self, ai_server):
-        """Test AI caller handles invalid request gracefully."""
+        """Test AI caller raises on invalid JSON (let it crash)."""
         reader, writer = await asyncio.open_unix_connection(ai_server.session_socket)
 
         # Send invalid JSON
         writer.write(b"invalid json\n")
         await writer.drain()
 
+        # With "let it crash", AI caller raises and closes connection
+        # Client receives EOF (empty data) instead of error response
         data = await reader.readline()
-        response = json.loads(data.decode())
+        assert len(data) == 0  # Connection closed by server
 
         writer.close()
         await writer.wait_closed()
-
-        assert "error" in response
