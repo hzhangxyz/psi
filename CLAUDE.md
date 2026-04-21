@@ -193,6 +193,9 @@ run_list("./workspace")
 - **辅助函数独立**: 通用辅助函数独立定义（如 `_is_valid_tool_call_name`, `_load_python_module`)
 - **函数有单一职责**: 每个函数只做一件事，名字描述职责
 - **缓存复用**: 重复加载的资源缓存（如 `_builder_module`）
+- **参数类型一致**: 私有方法参数类型应统一（如全部用 `Path` 而非混用 `str` 和 `Path`)
+- **参数命名一致**: 内部变量名与参数名保持一致（如 `source_dir` → `source_dir`，不要改成 `source`）
+- **数据模型统一**: 同一模块内的相似操作应使用相同的数据模型（如 `_handle_stream` 和 `_handle_non_stream` 都用 `LLMResponse`)
 
 ### 代码组织
 

@@ -275,7 +275,7 @@ class TestWorkspaceFUSE:
 
             lower_tmp = Path(tmpdir) / "tmp_lower"
             lower_tmp.mkdir()
-            await manager._mount_squashfs(str(v2_path), lower_tmp)
+            await manager._mount_squashfs(v2_path, lower_tmp)
             manifest = Manifest.model_validate(json.loads((lower_tmp / "manifest.json").read_text()))
             base_uuid = [k for k, v in manifest.deltas.items() if v.parent is None][0]
             await manager._unmount_fuse(lower_tmp)

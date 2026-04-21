@@ -21,7 +21,7 @@ class TestChannelInit:
     def test_channel_sets_socket(self, temp_socket_path):
         """Test channel sets session_socket."""
         channel = Channel(session_socket=temp_socket_path)
-        assert channel.session_socket == temp_socket_path
+        assert channel._session_socket == temp_socket_path
 
 
 class TestChannelRun:

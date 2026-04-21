@@ -338,8 +338,9 @@ class Session:
                             tool_calls[idx]["id"] = tc_delta["id"]
                         func = tc_delta.get("function")
                         if func:
-                            if func.get("name") and func["name"] != "null":
-                                tool_calls[idx]["function"]["name"] = func["name"]
+                            name = func.get("name")
+                            if name and name != "null":
+                                tool_calls[idx]["function"]["name"] = name
                             if func.get("arguments"):
                                 tool_calls[idx]["function"]["arguments"] += func["arguments"]
 

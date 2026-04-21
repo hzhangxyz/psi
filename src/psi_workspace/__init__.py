@@ -62,12 +62,12 @@ class WorkspaceManager:
             current = parent
         return chain
 
-    async def _mount_squashfs(self, sqfs_path: str, target_dir: Path) -> None:
+    async def _mount_squashfs(self, sqfs_path: Path, target_dir: Path) -> None:
         """Mount squashfs to directory using squashfuse."""
         logger.debug(f"Mounting squashfs | source={sqfs_path} | target={target_dir}")
         proc = await asyncio.create_subprocess_exec(
             "squashfuse",
-            sqfs_path,
+            str(sqfs_path),
             str(target_dir),
         )
         await proc.wait()
@@ -120,14 +120,14 @@ class WorkspaceManager:
             raise RuntimeError(f"fuse-overlayfs failed with code {proc.returncode}")
         logger.info(f"Overlay mounted | path={target_dir}")
 
-    async def _unpack_squashfs(self, sqfs_path: str, target_dir: Path) -> None:
+    async def _unpack_squashfs(self, sqfs_path: Path, target_dir: Path) -> None:
         """Unpack squashfs to directory using unsquashfs."""
         logger.debug(f"Unpacking squashfs | source={sqfs_path} | target={target_dir}")
         proc = await asyncio.create_subprocess_exec(
             "unsquashfs",
             "-d",
             str(target_dir),
-            sqfs_path,
+            str(sqfs_path),
         )
         await proc.wait()
         if proc.returncode != 0:
@@ -223,7 +223,7 @@ class WorkspaceManager:
 
         # Mount squashfs to lower
         lower_dir.mkdir(parents=True, exist_ok=True)
-        await self._mount_squashfs(str(sqfs), lower_dir)
+        await self._mount_squashfs(sqfs, lower_dir)
 
         # Read manifest and resolve version
         manifest_file = lower_dir / "manifest.json"
@@ -319,7 +319,7 @@ class WorkspaceManager:
         with TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
 
-            await self._unpack_squashfs(str(original_sqfs), tmp)
+            await self._unpack_squashfs(original_sqfs, tmp)
 
             # Read existing manifest
             manifest_file = tmp / "manifest.json"
@@ -352,7 +352,7 @@ class WorkspaceManager:
 
         # Remount with new squashfs
         lower_dir.mkdir(parents=True, exist_ok=True)
-        await self._mount_squashfs(str(output), lower_dir)
+        await self._mount_squashfs(output, lower_dir)
 
         # Build new chain
         manifest_file = lower_dir / "manifest.json"

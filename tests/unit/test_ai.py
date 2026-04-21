@@ -37,15 +37,15 @@ class TestAICallerInit:
 
     def test_init_sets_socket(self, ai_caller, temp_socket_path):
         """Test socket path is set."""
-        assert ai_caller.session_socket == temp_socket_path
+        assert ai_caller._session_socket == temp_socket_path
 
     def test_init_sets_model(self, ai_caller):
         """Test model is set."""
-        assert ai_caller.model == "test-model"
+        assert ai_caller._model == "test-model"
 
     def test_init_creates_client(self, ai_caller):
         """Test OpenAI client is created."""
-        assert ai_caller.client is not None
+        assert ai_caller._client is not None
 
 
 # ============================================================================
@@ -85,7 +85,7 @@ class TestAICallerRequestHandling:
         mock_response = MagicMock()
         mock_response.model_dump.return_value = {"choices": [{"message": {"role": "assistant", "content": "Hi there"}}]}
 
-        with patch.object(ai_caller.client.chat.completions, "create", AsyncMock(return_value=mock_response)):
+        with patch.object(ai_caller._client.chat.completions, "create", AsyncMock(return_value=mock_response)):
             await ai_caller.handle_client(reader, writer)
 
         # Verify response was written
@@ -115,7 +115,7 @@ class TestAICallerRequestHandling:
         mock_response.model_dump.return_value = {"choices": [{"message": {"role": "assistant", "content": "response"}}]}
 
         with patch.object(
-            ai_caller.client.chat.completions, "create", AsyncMock(return_value=mock_response)
+            ai_caller._client.chat.completions, "create", AsyncMock(return_value=mock_response)
         ) as mock_create:
             await ai_caller.handle_client(reader, writer)
 
@@ -172,7 +172,7 @@ class TestAICallerErrorHandling:
 
         # Non-network API error should raise
         with (
-            patch.object(ai_caller.client.chat.completions, "create", side_effect=Exception("API Error")),
+            patch.object(ai_caller._client.chat.completions, "create", side_effect=Exception("API Error")),
             pytest.raises(Exception, match="API Error"),
         ):
             await ai_caller.handle_client(reader, writer)
@@ -192,7 +192,7 @@ class TestAICallerErrorHandling:
         reader.feed_eof()
 
         # Network error should be handled gracefully
-        with patch.object(ai_caller.client.chat.completions, "create", side_effect=Exception("Broken pipe")):
+        with patch.object(ai_caller._client.chat.completions, "create", side_effect=Exception("Broken pipe")):
             await ai_caller.handle_client(reader, writer)
             # Should not raise, should close writer gracefully
 

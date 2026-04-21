@@ -14,18 +14,16 @@ from prompt_toolkit.styles import Style
 class Channel:
     """Terminal UI channel for user interaction."""
 
-    session_socket: str
-
     def __init__(self, session_socket: str) -> None:
-        self.session_socket = session_socket
+        self._session_socket = session_socket
         logger.debug(f"Channel initialized | socket={session_socket}")
 
     async def run(self) -> None:
         """Run the TUI interface."""
-        logger.info(f"Connecting to session at {self.session_socket}")
-        print(f"Connecting to session at {self.session_socket}", file=sys.stderr)
+        logger.info(f"Connecting to session at {self._session_socket}")
+        print(f"Connecting to session at {self._session_socket}", file=sys.stderr)
 
-        reader, writer = await asyncio.open_unix_connection(self.session_socket)
+        reader, writer = await asyncio.open_unix_connection(self._session_socket)
         logger.info("Connected to session")
 
         style = Style.from_dict(
@@ -35,13 +33,13 @@ class Channel:
             }
         )
 
-        session: PromptSession[str] = PromptSession(style=style)
+        prompt_session: PromptSession[str] = PromptSession(style=style)
 
         print("Connected. Ctrl+C to exit.")
 
         while True:
             try:
-                user_input = await session.prompt_async("You: ", style=style)
+                user_input = await prompt_session.prompt_async("You: ", style=style)
                 logger.debug(f"User input received | length={len(user_input)}")
 
                 if not user_input:

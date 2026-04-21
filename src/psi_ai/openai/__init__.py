@@ -18,10 +18,6 @@ from psi_common import LLMRequest, LLMResponse
 class AICaller:
     """LLM Caller that forwards requests to OpenAI-compatible APIs."""
 
-    session_socket: str
-    client: AsyncOpenAI
-    model: str
-
     def __init__(
         self,
         session_socket: str,
@@ -29,9 +25,9 @@ class AICaller:
         base_url: str,
         model: str,
     ) -> None:
-        self.session_socket = session_socket
-        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-        self.model = model
+        self._session_socket = session_socket
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self._model = model
 
         logger.info(f"AI Caller initialized | model={model} | base_url={base_url}")
         logger.debug(f"AI Caller config | socket={session_socket}")
@@ -90,7 +86,7 @@ class AICaller:
         logger.debug(f"Starting stream | request_id={request_id}")
 
         kwargs: dict[str, Any] = {
-            "model": self.model,
+            "model": self._model,
             "messages": messages,
             "stream": True,
         }
@@ -99,7 +95,7 @@ class AICaller:
             kwargs["tool_choice"] = tool_choice
 
         try:
-            stream = await self.client.chat.completions.create(**kwargs)
+            stream = await self._client.chat.completions.create(**kwargs)
             chunk_count = 0
 
             async for chunk in stream:
@@ -132,7 +128,7 @@ class AICaller:
         logger.debug(f"Starting non-stream request | request_id={request_id}")
 
         kwargs: dict[str, Any] = {
-            "model": self.model,
+            "model": self._model,
             "messages": messages,
         }
         if tools:
@@ -140,10 +136,10 @@ class AICaller:
             kwargs["tool_choice"] = tool_choice
 
         try:
-            response = await self.client.chat.completions.create(**kwargs)
+            response = await self._client.chat.completions.create(**kwargs)
             response_data = response.model_dump()
-            result = {"id": request_id, "choices": response_data.get("choices", [])}
-            writer.write((json.dumps(result) + "\n").encode())
+            llm_response = LLMResponse(id=request_id, choices=response_data.get("choices", []))
+            writer.write((llm_response.model_dump_json() + "\n").encode())
             await writer.drain()
 
             content = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -155,17 +151,17 @@ class AICaller:
 
     async def run(self) -> None:
         """Start the Unix socket server."""
-        socket_path = Path(self.session_socket)
+        socket_path = Path(self._session_socket)
         if socket_path.exists():
             socket_path.unlink()
-            logger.debug(f"Removed existing socket | path={self.session_socket}")
+            logger.debug(f"Removed existing socket | path={self._session_socket}")
 
         server = await asyncio.start_unix_server(
             self.handle_client,
-            path=self.session_socket,
+            path=self._session_socket,
         )
 
-        logger.info(f"AI server started | socket={self.session_socket} | model={self.model}")
+        logger.info(f"AI server started | socket={self._session_socket} | model={self._model}")
 
         async with server:
             await server.serve_forever()
