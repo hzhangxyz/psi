@@ -110,11 +110,64 @@ async def run(params, workspace_path):
         assert module is not None
         assert hasattr(module, "run")
 
-    def test_load_nonexistent_file(self):
-        """Test loading nonexistent file."""
-        # Module loading errors are handled gracefully
-        # Behavior is implementation-defined for missing files
-        pass  # Verified by error handling tests
+
+class TestGenerateToolSchema:
+    """Test _generate_tool_schema type inference."""
+
+    def test_string_param_default(self, session):
+        """Test default string type for untyped params."""
+
+        async def test_tool(params, workspace_path, message):
+            """Test tool."""
+            pass
+
+        schema = session._generate_tool_schema("test_tool", test_tool)
+        # params and workspace_path are skipped, so message is the only param
+        assert schema["function"]["parameters"]["properties"]["message"]["type"] == "string"
+
+    def test_int_param(self, session, temp_workspace):
+        """Test int param maps to number."""
+        (temp_workspace / "tools" / "int_tool.py").write_text(
+            "async def run(params: dict, workspace_path: str, count: int) -> dict:\n"
+            '    """Tool with int param."""\n'
+            "    return {'success': True}\n"
+        )
+        session.load_tools()
+        schema = session._tools_schema[0]
+        assert schema["function"]["parameters"]["properties"]["count"]["type"] == "number"
+
+    def test_bool_param(self, session, temp_workspace):
+        """Test bool param maps to boolean."""
+        (temp_workspace / "tools" / "bool_tool.py").write_text(
+            "async def run(params: dict, workspace_path: str, enabled: bool) -> dict:\n"
+            '    """Tool with bool param."""\n'
+            "    return {'success': True}\n"
+        )
+        session.load_tools()
+        schema = session._tools_schema[0]
+        assert schema["function"]["parameters"]["properties"]["enabled"]["type"] == "boolean"
+
+    def test_list_param(self, session, temp_workspace):
+        """Test list param maps to array."""
+        (temp_workspace / "tools" / "list_tool.py").write_text(
+            "async def run(params: dict, workspace_path: str, items: list) -> dict:\n"
+            '    """Tool with list param."""\n'
+            "    return {'success': True}\n"
+        )
+        session.load_tools()
+        schema = session._tools_schema[0]
+        assert schema["function"]["parameters"]["properties"]["items"]["type"] == "array"
+
+    def test_dict_param(self, session, temp_workspace):
+        """Test dict param maps to object."""
+        (temp_workspace / "tools" / "dict_tool.py").write_text(
+            "async def run(params: dict, workspace_path: str, config: dict) -> dict:\n"
+            '    """Tool with dict param."""\n'
+            "    return {'success': True}\n"
+        )
+        session.load_tools()
+        schema = session._tools_schema[0]
+        assert schema["function"]["parameters"]["properties"]["config"]["type"] == "object"
 
 
 # ============================================================================
@@ -357,6 +410,43 @@ Skill content here.
         session.load_skills()
         assert len(session._skills_index) == 1
         assert session._skills_index[0]["name"] == "default_name"
+
+    def test_load_skill_incomplete_frontmatter(self, session, temp_workspace):
+        """Test skill with incomplete frontmatter uses directory name."""
+        skill_dir = temp_workspace / "skills" / "incomplete"
+        skill_dir.mkdir()
+        # Only opening ---, no closing ---
+        (skill_dir / "SKILL.md").write_text("---\nname: incomplete\n")
+
+        session.load_skills()
+        assert len(session._skills_index) == 1
+        assert session._skills_index[0]["name"] == "incomplete"
+
+    def test_skip_non_directory_in_skills(self, session, temp_workspace):
+        """Test non-directory files in skills/ are skipped."""
+        # Create a .py file in skills directory (should be skipped)
+        (temp_workspace / "skills" / "some_file.py").write_text("# not a skill")
+        # Create a valid skill
+        skill_dir = temp_workspace / "skills" / "valid_skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("---\nname: valid\n---\n")
+
+        session.load_skills()
+        assert len(session._skills_index) == 1
+        assert session._skills_index[0]["name"] == "valid"
+
+    def test_skip_skill_without_skill_md(self, session, temp_workspace):
+        """Test directories without SKILL.md are skipped."""
+        # Create a directory without SKILL.md (should be skipped)
+        (temp_workspace / "skills" / "no_md_dir").mkdir()
+        # Create a valid skill
+        skill_dir = temp_workspace / "skills" / "valid_skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text("---\nname: valid\n---\n")
+
+        session.load_skills()
+        assert len(session._skills_index) == 1
+        assert session._skills_index[0]["name"] == "valid"
 
     def test_load_multiple_skills(self, session, temp_workspace):
         """Test loading multiple skills."""
