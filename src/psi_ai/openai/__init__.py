@@ -63,13 +63,13 @@ class AICaller:
 
         except Exception as e:
             error_str = str(e)
+            # Only handle network-related errors gracefully
             if "Connection" in error_str or "Broken pipe" in error_str or "Pipe" in error_str:
                 logger.debug(f"Connection closed by client | error={e}")
                 return
+            # Non-network errors: let it crash
             logger.error(f"Request handling error | error={e}")
-            error_response = {"id": request_id, "error": error_str}
-            writer.write((json.dumps(error_response) + "\n").encode())
-            await writer.drain()
+            raise
 
         finally:
             try:

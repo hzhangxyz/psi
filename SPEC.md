@@ -30,7 +30,7 @@
 
 启动：
 ```bash
-psi-ai-openai --session-socket ./psi-ai.sock \
+psi-ai-openai --session-socket ./ai.sock \
               --model gpt-4o \
               --api-key $KEY \
               --base-url https://api.openai.com/v1
@@ -52,7 +52,7 @@ psi-ai-openai --session-socket ./psi-ai.sock \
 ```bash
 psi-session --workspace ./workspace \
             --channel-socket ./channel.sock \
-            --ai-socket ./psi-ai.sock \
+            --ai-socket ./ai.sock \
             --session-id main
 ```
 
@@ -337,7 +337,7 @@ from psi_workspace import run_mount, run_unmount, run_snapshot, run_list
 # 使用示例
 async def main():
     await run_ai(socket="./ai.sock", model="gpt-4o", api_key="...", base_url="...")
-    await run_session(workspace="./workspace", channel_socket="./channel.sock", llm_socket="./ai.sock")
+    await run_session(workspace="./workspace", channel_socket="./channel.sock", ai_socket="./ai.sock")
     await run_channel(session_socket="./channel.sock")
 ```
 
@@ -468,10 +468,20 @@ sudo apt install squashfuse fuse-overlayfs squashfs-tools
 - socket 相关参数使用 `*_socket` 格式
 - 所有模块统一提供 `--log-level` 参数
 
-### Socket 路径
+### Socket 命名
 
-- **生产环境**：使用相对路径（如 `./channel.sock`, `./ai.sock`），方便在不同目录运行
-- **测试环境**：统一使用 pytest 的 `tmp_path` fixture（如 `tmp_path / "channel.sock"`），避免使用硬编码的 `/tmp/` 路径
+**变量命名：**
+- `session_socket`: AI Caller 监听的 socket（Session 连接到此）
+- `channel_socket`: Session 监听的 socket（Channel 连接到此）
+- `ai_socket`: Session 连接 AI 的 socket（与 AI 的 `session_socket` 对应）
+
+**文件命名（示例和测试）：**
+- `ai.sock`: AI Caller socket 文件
+- `channel.sock`: Channel/Session socket 文件
+
+**路径原则：**
+- 生产环境：相对路径（如 `./channel.sock`, `./ai.sock`）
+- 测试环境：pytest `tmp_path` fixture（如 `tmp_path / "channel.sock"`）
 - socket 文件后缀：`.sock`
 
 ### 文件与目录
@@ -486,3 +496,22 @@ sudo apt install squashfuse fuse-overlayfs squashfs-tools
 - 函数：snake_case（如 `load_tools`, `run_session`）
 - 类：PascalCase（如 `Session`, `SessionConfig`）
 - Pydantic model：PascalCase（如 `LLMRequest`, `ToolResult`）
+
+## 20. 设计原则
+
+### Let it Crash
+
+- **原则**：除了网络故障，所有错误都应该让进程 crash
+- **网络故障**：连接断开、Broken pipe、Pipe error 等，可以优雅处理
+- **其他错误**：JSON 解析错误、API 错误、业务逻辑错误等，应该 crash（raise）
+
+### 初版原则
+
+- **不考虑兼容性**：目前是第一版，不需要向后兼容
+- 清理代码时可以直接删除旧代码，不需要保留 compatibility wrapper
+
+### 测试原则
+
+- **环境变量**：使用 OpenAI 风格命名（`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`）
+- **单元测试**：测试 Python API（`run_*` 函数），不测试 CLI（tyro.cli wrapper）
+- **集成测试**：需要真实 API key，从环境变量读取

@@ -6,7 +6,8 @@
 
 - **绿色可移植**: 一个 workspace 目录包含完整的 agent（提示词、工具、技能）
 - **组件化**: 四个独立进程通过 Unix socket 通信
-- **Let it crash**: 简单设计，不做复杂错误恢复
+- **Let it crash**: 除了网络故障，所有错误都应该让进程 crash
+- **不考虑兼容性**: 目前是第一版，不需要向后兼容
 
 ## 架构
 
@@ -22,6 +23,10 @@
                                 │ (tools/skills)
                                 └─────────────┘
 ```
+
+**Socket 命名约定:**
+- 代码变量：`session_socket`, `channel_socket`, `ai_socket`
+- 文件命名：`ai.sock`, `channel.sock`
 
 ## 安装
 
@@ -70,7 +75,7 @@ uv run pytest tests/integration/ -v
 
 **终端 1 - 启动 LLM Caller:**
 ```bash
-uv run psi-ai-openai --session-socket ./psi-ai.sock \
+uv run psi-ai-openai --session-socket ./ai.sock \
     --model gpt-4o \
     --api-key $API_KEY \
     --base-url https://api.openai.com/v1
@@ -80,7 +85,7 @@ uv run psi-ai-openai --session-socket ./psi-ai.sock \
 ```bash
 uv run psi-session --workspace ./examples/simple_example \
     --channel-socket ./channel.sock \
-    --ai-socket ./psi-ai.sock
+    --ai-socket ./ai.sock
 ```
 
 **终端 3 - 启动 TUI:**

@@ -6,7 +6,7 @@
 
 ```bash
 # 1. 启动 LLM Caller
-uv run psi-ai-openai --session-socket ./psi-ai.sock \
+uv run psi-ai-openai --session-socket ./ai.sock \
     --model qwen3.5-plus \
     --api-key $API_KEY \
     --base-url https://coding.dashscope.aliyuncs.com/v1
@@ -14,7 +14,7 @@ uv run psi-ai-openai --session-socket ./psi-ai.sock \
 # 2. 启动 Session
 uv run psi-session --workspace ./examples/simple_example \
     --channel-socket ./channel.sock \
-    --ai-socket ./psi-ai.sock
+    --ai-socket ./ai.sock
 
 # 3. 启动 TUI
 uv run psi-channel-tui --session-socket ./channel.sock
@@ -61,9 +61,12 @@ Session 接收用户消息后：
 
 ## 设计原则
 
-- **Let it crash**: 错误时不做复杂恢复
+- **Let it crash**: 除了网络故障，所有错误都应该让进程 crash
+  - 网络故障（可优雅处理）：Connection、Broken pipe、Pipe error
+  - 其他错误（应该 crash）：JSON 解析错误、API 错误、业务逻辑错误
 - **绿色可移植**: workspace 可整体复制/移动
 - **组件化**: 独立进程，socket 通信
+- **不考虑兼容性**: 目前是第一版，不需要向后兼容，可直接删除旧代码
 
 ## 日志
 
@@ -210,7 +213,7 @@ run_list("./workspace")
 
 - **snake_case**: 所有 CLI 参数使用 snake_case（如 `channel_socket`, `log_level`）
 - **位置参数**: 简短单词（如 `workspace`, `model`, `output`）
-- **socket 参数**: `*_socket` 格式（如 `channel_socket`, `llm_socket`, `session_socket`）
+- **socket 参数**: `*_socket` 格式（如 `channel_socket`, `ai_socket`, `session_socket`）
 - **log_level**: 所有模块统一有 `log_level` 参数
 
 #### 文件命名
@@ -225,6 +228,21 @@ run_list("./workspace")
 - **常量**: UPPER_CASE 或 snake_case（如 `MAX_ITERATIONS` 或 `max_iterations`）
 - **函数**: snake_case（如 `load_tools`, `build_system_prompt`）
 - **类**: PascalCase（如 `Session`, `SessionConfig`, `WorkspaceManager`）
+
+#### Socket 命名
+
+**变量命名（代码中）:**
+- `session_socket`: AI Caller 监听的 socket（Session 连接到此）
+- `channel_socket`: Session 监听的 socket（Channel 连接到此）
+- `ai_socket`: Session 连接 AI 的 socket（与 AI 的 `session_socket` 对应）
+
+**文件命名（示例和测试）:**
+- `ai.sock`: AI Caller socket 文件
+- `channel.sock`: Channel/Session socket 文件
+
+**路径原则:**
+- 生产环境：相对路径（如 `./channel.sock`, `./ai.sock`）
+- 测试环境：pytest `tmp_path` fixture（如 `tmp_path / "channel.sock"`）
 
 #### 数据库/JSON 字段
 

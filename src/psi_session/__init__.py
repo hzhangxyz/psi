@@ -442,11 +442,19 @@ class Session:
                     response = {"role": "assistant", "content": response_text}
                     writer.write((json.dumps(response) + "\n").encode())
                     await writer.drain()
+            except json.JSONDecodeError as e:
+                # Invalid JSON from channel: let it crash
+                logger.error(f"Invalid JSON from channel | error={e}")
+                raise
             except Exception as e:
+                # Check if it's a network error
+                error_str = str(e)
+                if "Connection" in error_str or "Broken pipe" in error_str or "Pipe" in error_str:
+                    logger.debug(f"Connection closed | error={e}")
+                    break
+                # Non-network errors: let it crash
                 logger.error(f"Channel handling error | error={e}")
-                error_response = {"role": "assistant", "content": f"Error: {e}"}
-                writer.write((json.dumps(error_response) + "\n").encode())
-                await writer.drain()
+                raise
 
         writer.close()
         await writer.wait_closed()

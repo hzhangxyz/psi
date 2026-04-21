@@ -85,7 +85,7 @@ class TestAICallerRequestHandling:
         mock_response = MagicMock()
         mock_response.model_dump.return_value = {"choices": [{"message": {"role": "assistant", "content": "Hi there"}}]}
 
-        with patch.object(ai_caller.client.chat.completions, "create", return_value=mock_response):
+        with patch.object(ai_caller.client.chat.completions, "create", AsyncMock(return_value=mock_response)):
             await ai_caller.handle_client(reader, writer)
 
         # Verify response was written
@@ -114,7 +114,9 @@ class TestAICallerRequestHandling:
         mock_response = MagicMock()
         mock_response.model_dump.return_value = {"choices": [{"message": {"role": "assistant", "content": "response"}}]}
 
-        with patch.object(ai_caller.client.chat.completions, "create", return_value=mock_response) as mock_create:
+        with patch.object(
+            ai_caller.client.chat.completions, "create", AsyncMock(return_value=mock_response)
+        ) as mock_create:
             await ai_caller.handle_client(reader, writer)
 
             # Verify tools were passed
@@ -138,8 +140,8 @@ class TestAICallerErrorHandling:
     """Test AICaller error handling."""
 
     @pytest.mark.asyncio
-    async def test_handle_invalid_json(self, ai_caller):
-        """Test handling invalid JSON."""
+    async def test_handle_invalid_json_raises(self, ai_caller):
+        """Test handling invalid JSON raises (let it crash)."""
         reader = asyncio.StreamReader()
         writer = MagicMock()
         writer.write = MagicMock()
@@ -150,17 +152,13 @@ class TestAICallerErrorHandling:
         reader.feed_data(b"invalid json\n")
         reader.feed_eof()
 
-        await ai_caller.handle_client(reader, writer)
-
-        # Should write error response
-        assert writer.write.called
-        written_data = writer.write.call_args[0][0]
-        response = json.loads(written_data.decode())
-        assert "error" in response
+        # Invalid JSON should raise (let it crash)
+        with pytest.raises(json.JSONDecodeError):
+            await ai_caller.handle_client(reader, writer)
 
     @pytest.mark.asyncio
-    async def test_connection_error_handling(self, ai_caller):
-        """Test connection error is handled gracefully."""
+    async def test_api_error_raises(self, ai_caller):
+        """Test non-network API error raises (let it crash)."""
         reader = asyncio.StreamReader()
         writer = MagicMock()
         writer.write = MagicMock()
@@ -172,12 +170,31 @@ class TestAICallerErrorHandling:
         reader.feed_data((request.model_dump_json() + "\n").encode())
         reader.feed_eof()
 
-        # Mock API error
-        with patch.object(ai_caller.client.chat.completions, "create", side_effect=Exception("API Error")):
+        # Non-network API error should raise
+        with (
+            patch.object(ai_caller.client.chat.completions, "create", side_effect=Exception("API Error")),
+            pytest.raises(Exception, match="API Error"),
+        ):
             await ai_caller.handle_client(reader, writer)
-            # Should handle error without crashing
-            # Error response should be written
-            assert writer.write.called
+
+    @pytest.mark.asyncio
+    async def test_network_error_handled_gracefully(self, ai_caller):
+        """Test network error is handled gracefully."""
+        reader = asyncio.StreamReader()
+        writer = MagicMock()
+        writer.write = MagicMock()
+        writer.drain = AsyncMock()
+        writer.close = MagicMock()
+        writer.wait_closed = AsyncMock()
+
+        request = LLMRequest(id="test", messages=[], stream=False)
+        reader.feed_data((request.model_dump_json() + "\n").encode())
+        reader.feed_eof()
+
+        # Network error should be handled gracefully
+        with patch.object(ai_caller.client.chat.completions, "create", side_effect=Exception("Broken pipe")):
+            await ai_caller.handle_client(reader, writer)
+            # Should not raise, should close writer gracefully
 
 
 # ============================================================================
