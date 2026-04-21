@@ -34,45 +34,29 @@ class AICaller:
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Handle a single client connection."""
-        request_id: str = "unknown"
-        try:
-            data = await reader.readline()
-            if not data:
-                logger.debug("Empty request received")
-                return
+        data = await reader.readline()
+        if not data:
+            logger.debug("Empty request received")
+            return
 
-            request_data = json.loads(data.decode())
-            request = LLMRequest.model_validate(request_data)
-            request_id = request.id
-            messages = request.messages
-            tools = request.tools
-            tool_choice = request.tool_choice
-            stream = request.stream
+        request_data = json.loads(data.decode())
+        request = LLMRequest.model_validate(request_data)
+        request_id = request.id
+        messages = request.messages
+        tools = request.tools
+        tool_choice = request.tool_choice
+        stream = request.stream
 
-            logger.info(f"Request received | id={request_id} | stream={stream} | message_count={len(messages)}")
-            logger.debug(f"Request details | has_tools={tools is not None} | tool_choice={tool_choice}")
+        logger.info(f"Request received | id={request_id} | stream={stream} | message_count={len(messages)}")
+        logger.debug(f"Request details | has_tools={tools is not None} | tool_choice={tool_choice}")
 
-            if stream:
-                await self._handle_stream(request_id, messages, tools, tool_choice, writer)
-            else:
-                await self._handle_non_stream(request_id, messages, tools, tool_choice, writer)
+        if stream:
+            await self._handle_stream(request_id, messages, tools, tool_choice, writer)
+        else:
+            await self._handle_non_stream(request_id, messages, tools, tool_choice, writer)
 
-        except Exception as e:
-            error_str = str(e)
-            # Only handle network-related errors gracefully
-            if "Connection" in error_str or "Broken pipe" in error_str or "Pipe" in error_str:
-                logger.debug(f"Connection closed by client | error={e}")
-                return
-            # Non-network errors: let it crash
-            logger.error(f"Request handling error | error={e}")
-            raise
-
-        finally:
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception:
-                pass
+        writer.close()
+        await writer.wait_closed()
 
     async def _handle_stream(
         self,

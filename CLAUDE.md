@@ -62,7 +62,8 @@ Session 接收用户消息后：
 ## 设计原则
 
 - **Let it crash**: 除了网络故障，所有错误都应该让进程 crash
-  - 网络故障（可优雅处理）：Connection、Broken pipe、Pipe error
+  - 外部网络故障（可优雅处理）：用户连接断开、LLM API 连接问题
+  - 组件间连接（应该 crash）：psi_session <-> psi_ai、psi_channel <-> psi_session 之间的连接应该假设正常工作，出问题就 crash
   - 其他错误（应该 crash）：JSON 解析错误、API 错误、业务逻辑错误
 - **绿色可移植**: workspace 可整体复制/移动
 - **组件化**: 独立进程，socket 通信

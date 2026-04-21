@@ -181,31 +181,12 @@ class TestAICallerErrorHandling:
         reader.feed_data((request.model_dump_json() + "\n").encode())
         reader.feed_eof()
 
-        # Non-network API error should raise
+        # API error should raise (let it crash)
         with (
             patch.object(ai_caller._client.chat.completions, "create", side_effect=Exception("API Error")),
             pytest.raises(Exception, match="API Error"),
         ):
             await ai_caller.handle_client(reader, writer)
-
-    @pytest.mark.asyncio
-    async def test_network_error_handled_gracefully(self, ai_caller):
-        """Test network error is handled gracefully."""
-        reader = asyncio.StreamReader()
-        writer = MagicMock()
-        writer.write = MagicMock()
-        writer.drain = AsyncMock()
-        writer.close = MagicMock()
-        writer.wait_closed = AsyncMock()
-
-        request = LLMRequest(id="test", messages=[], stream=False)
-        reader.feed_data((request.model_dump_json() + "\n").encode())
-        reader.feed_eof()
-
-        # Network error should be handled gracefully
-        with patch.object(ai_caller._client.chat.completions, "create", side_effect=Exception("Broken pipe")):
-            await ai_caller.handle_client(reader, writer)
-            # Should not raise, should close writer gracefully
 
 
 # ============================================================================

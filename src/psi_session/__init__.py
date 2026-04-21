@@ -311,12 +311,7 @@ class Session:
             if response.get("done"):
                 break
 
-            choices = response.get("choices", [])
-            if not choices:
-                continue
-            delta = choices[0].get("delta", {})
-            if not delta:
-                continue
+            delta = response["choices"][0]["delta"]
 
             content = delta.get("content")
             if content:
@@ -417,26 +412,12 @@ class Session:
             if not data:
                 break
 
-            try:
-                user_message = json.loads(data.decode())
-                if user_message.get("role") == "user":
-                    response_text = await self.run_react_loop(user_message)
-                    response = {"role": "assistant", "content": response_text}
-                    writer.write((json.dumps(response) + "\n").encode())
-                    await writer.drain()
-            except json.JSONDecodeError as e:
-                # Invalid JSON from channel: let it crash
-                logger.error(f"Invalid JSON from channel | error={e}")
-                raise
-            except Exception as e:
-                # Check if it's a network error
-                error_str = str(e)
-                if "Connection" in error_str or "Broken pipe" in error_str or "Pipe" in error_str:
-                    logger.debug(f"Connection closed | error={e}")
-                    break
-                # Non-network errors: let it crash
-                logger.error(f"Channel handling error | error={e}")
-                raise
+            user_message = json.loads(data.decode())
+            if user_message.get("role") == "user":
+                response_text = await self.run_react_loop(user_message)
+                response = {"role": "assistant", "content": response_text}
+                writer.write((json.dumps(response) + "\n").encode())
+                await writer.drain()
 
         writer.close()
         await writer.wait_closed()
