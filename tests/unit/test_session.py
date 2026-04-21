@@ -659,9 +659,7 @@ async def run(params, workspace_path):
             mock_call.return_value = {
                 "role": "assistant",
                 "content": "",
-                "tool_calls": [
-                    {"id": "call-1", "function": {"name": "loop_tool", "arguments": "{}"}}
-                ],
+                "tool_calls": [{"id": "call-1", "function": {"name": "loop_tool", "arguments": "{}"}}],
             }
 
             user_message = {"role": "user", "content": "Test"}
