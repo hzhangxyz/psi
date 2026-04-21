@@ -329,3 +329,94 @@ class TestWorkspaceFUSE:
 
             # Unmount should work even if lower_dir check fails
             await manager.unmount(str(workspace_dir))
+
+
+@pytest.mark.skipif(not FUSE_AVAILABLE, reason="FUSE tools not available")
+class TestRunFunctions:
+    """Test run_* Python API functions."""
+
+    @pytest.mark.asyncio
+    async def test_run_create(self):
+        """Test run_create function."""
+        from psi_workspace import run_create
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_dir = Path(tmpdir) / "source"
+            output_path = Path(tmpdir) / "base.sqfs"
+
+            source_dir.mkdir()
+            (source_dir / "AGENT.md").write_text("Test")
+
+            await run_create(str(source_dir), str(output_path), "initial", log_level="ERROR")
+
+            assert output_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_run_mount_unmount(self):
+        """Test run_mount and run_unmount functions."""
+        from psi_workspace import run_mount, run_unmount
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_dir = Path(tmpdir) / "source"
+            squashfs_path = Path(tmpdir) / "base.sqfs"
+            workspace_dir = Path(tmpdir) / "workspace"
+
+            source_dir.mkdir()
+            (source_dir / "AGENT.md").write_text("Test")
+
+            # First create
+            from psi_workspace import run_create
+
+            await run_create(str(source_dir), str(squashfs_path))
+
+            # Mount
+            await run_mount(str(squashfs_path), str(workspace_dir), log_level="ERROR")
+            assert (workspace_dir / "AGENT.md").exists()
+
+            # Unmount
+            await run_unmount(str(workspace_dir), log_level="ERROR")
+
+    @pytest.mark.asyncio
+    async def test_run_snapshot(self):
+        """Test run_snapshot function."""
+        from psi_workspace import run_create, run_mount, run_snapshot, run_unmount
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_dir = Path(tmpdir) / "source"
+            squashfs_path = Path(tmpdir) / "base.sqfs"
+            workspace_dir = Path(tmpdir) / "workspace"
+            snapshot_path = Path(tmpdir) / "v1.sqfs"
+
+            source_dir.mkdir()
+            (source_dir / "AGENT.md").write_text("Test")
+
+            await run_create(str(source_dir), str(squashfs_path))
+            await run_mount(str(squashfs_path), str(workspace_dir))
+
+            # Write change
+            (workspace_dir / "new.txt").write_text("new content")
+
+            await run_snapshot(str(workspace_dir), str(snapshot_path), "changes", log_level="ERROR")
+            assert snapshot_path.exists()
+
+            await run_unmount(str(workspace_dir))
+
+    def test_run_list(self, capsys):
+        """Test run_list function."""
+        from psi_workspace import run_list
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace_dir = Path(tmpdir) / "workspace"
+            workspace_dir.mkdir()
+
+            # Create manifest
+            from psi_workspace import WorkspaceManager
+
+            manager = WorkspaceManager()
+            manifest_path = Path(tmpdir) / "manifest.json"
+            manager._add_snapshot(manifest_path, "v1.sqfs", "test")
+
+            run_list(str(workspace_dir), log_level="ERROR")
+
+            captured = capsys.readouterr()
+            assert "v1.sqfs" in captured.out
