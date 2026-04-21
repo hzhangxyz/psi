@@ -1,8 +1,6 @@
 """Tests for psi_session - comprehensive coverage."""
 
 import json
-import tempfile
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,25 +16,33 @@ from psi_session import (
 
 
 @pytest.fixture
-def temp_workspace():
+def temp_workspace(tmp_path):
     """Create a temporary workspace for testing."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        workspace = Path(tmpdir)
-        (workspace / "tools").mkdir()
-        (workspace / "skills").mkdir()
-        (workspace / "systems").mkdir()
-        (workspace / "state").mkdir()
-        (workspace / "AGENT.md").write_text("Test Agent")
-        yield workspace
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "tools").mkdir()
+    (workspace / "skills").mkdir()
+    (workspace / "systems").mkdir()
+    (workspace / "state").mkdir()
+    (workspace / "AGENT.md").write_text("Test Agent")
+    return workspace
 
 
 @pytest.fixture
-def session_config(temp_workspace):
+def temp_socket_dir(tmp_path):
+    """Create a directory for temporary socket paths."""
+    socket_dir = tmp_path / "sockets"
+    socket_dir.mkdir()
+    return socket_dir
+
+
+@pytest.fixture
+def session_config(temp_workspace, temp_socket_dir):
     """Create a SessionConfig for testing."""
     return SessionConfig(
         workspace_path=str(temp_workspace),
-        channel_socket="/tmp/test-channel.sock",
-        ai_socket="/tmp/test-ai.sock",
+        channel_socket=str(temp_socket_dir / "channel.sock"),
+        ai_socket=str(temp_socket_dir / "ai.sock"),
         session_id="test",
     )
 
@@ -124,12 +130,12 @@ class TestSessionConfig:
         assert session_config.session_id == "test"
         assert session_config.max_iterations == 10
 
-    def test_config_custom_max_iterations(self, temp_workspace):
+    def test_config_custom_max_iterations(self, temp_workspace, temp_socket_dir):
         """Test config with custom max_iterations."""
         config = SessionConfig(
             workspace_path=str(temp_workspace),
-            channel_socket="/tmp/test.sock",
-            ai_socket="/tmp/ai.sock",
+            channel_socket=str(temp_socket_dir / "channel.sock"),
+            ai_socket=str(temp_socket_dir / "ai.sock"),
             max_iterations=20,
         )
         assert config.max_iterations == 20
@@ -149,11 +155,11 @@ class TestSessionConfig:
 class TestSessionInit:
     """Test Session initialization."""
 
-    def test_session_internal_state(self, session, temp_workspace):
+    def test_session_internal_state(self, session, temp_workspace, temp_socket_dir):
         """Test session has correct internal state."""
         assert session._workspace_path == temp_workspace
-        assert session._config.channel_socket == "/tmp/test-channel.sock"
-        assert session._config.ai_socket == "/tmp/test-ai.sock"
+        assert session._config.channel_socket == str(temp_socket_dir / "channel.sock")
+        assert session._config.ai_socket == str(temp_socket_dir / "ai.sock")
         assert session._config.session_id == "test"
         assert session._config.max_iterations == 10
 
@@ -637,16 +643,19 @@ class TestRunSession:
     """Test run_session function."""
 
     @pytest.mark.asyncio
-    async def test_run_session_creates_config(self, temp_workspace):
+    async def test_run_session_creates_config(self, temp_workspace, temp_socket_dir):
         """Test run_session creates SessionConfig correctly."""
+        channel_socket = str(temp_socket_dir / "channel.sock")
+        ai_socket = str(temp_socket_dir / "ai.sock")
+
         with patch("psi_session.Session") as mock_session_class:
             mock_session = AsyncMock()
             mock_session_class.return_value = mock_session
 
             await run_session(
                 workspace_path=str(temp_workspace),
-                channel_socket="/tmp/channel.sock",
-                ai_socket="/tmp/ai.sock",
+                channel_socket=channel_socket,
+                ai_socket=ai_socket,
                 session_id="test",
                 log_level="DEBUG",
             )
@@ -655,8 +664,8 @@ class TestRunSession:
             call_args = mock_session_class.call_args
             config = call_args[0][0]
             assert config.workspace_path == str(temp_workspace)
-            assert config.channel_socket == "/tmp/channel.sock"
-            assert config.ai_socket == "/tmp/ai.sock"
+            assert config.channel_socket == channel_socket
+            assert config.ai_socket == ai_socket
             assert config.session_id == "test"
 
 

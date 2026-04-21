@@ -9,22 +9,28 @@ import pytest
 from psi_channel.tui import Channel, run_channel
 
 
+@pytest.fixture
+def temp_socket_path(tmp_path):
+    """Create a temporary socket path."""
+    return str(tmp_path / "test.sock")
+
+
 class TestChannelInit:
     """Test Channel initialization."""
 
-    def test_channel_sets_socket(self):
+    def test_channel_sets_socket(self, temp_socket_path):
         """Test channel sets session_socket."""
-        channel = Channel(session_socket="/tmp/test.sock")
-        assert channel.session_socket == "/tmp/test.sock"
+        channel = Channel(session_socket=temp_socket_path)
+        assert channel.session_socket == temp_socket_path
 
 
 class TestChannelRun:
     """Test Channel.run method with mocks."""
 
     @pytest.mark.asyncio
-    async def test_channel_connects_and_sends_message(self, capsys):
+    async def test_channel_connects_and_sends_message(self, temp_socket_path, capsys):
         """Test channel connects and sends/receives message."""
-        channel = Channel(session_socket="/tmp/test.sock")
+        channel = Channel(session_socket=temp_socket_path)
 
         mock_reader = asyncio.StreamReader()
         mock_writer = MagicMock()
@@ -56,9 +62,9 @@ class TestChannelRun:
         assert "Hello back!" in captured.out
 
     @pytest.mark.asyncio
-    async def test_channel_handles_keyboard_interrupt(self, capsys):
+    async def test_channel_handles_keyboard_interrupt(self, temp_socket_path, capsys):
         """Test channel handles Ctrl+C."""
-        channel = Channel(session_socket="/tmp/test.sock")
+        channel = Channel(session_socket=temp_socket_path)
 
         mock_reader = asyncio.StreamReader()
         mock_writer = MagicMock()
@@ -80,9 +86,9 @@ class TestChannelRun:
         assert "Exiting" in captured.out
 
     @pytest.mark.asyncio
-    async def test_channel_handles_eof(self):
+    async def test_channel_handles_eof(self, temp_socket_path):
         """Test channel handles EOF."""
-        channel = Channel(session_socket="/tmp/test.sock")
+        channel = Channel(session_socket=temp_socket_path)
 
         mock_reader = asyncio.StreamReader()
         mock_writer = MagicMock()
@@ -101,9 +107,9 @@ class TestChannelRun:
             await channel.run()
 
     @pytest.mark.asyncio
-    async def test_channel_handles_empty_input(self):
+    async def test_channel_handles_empty_input(self, temp_socket_path):
         """Test channel skips empty input."""
-        channel = Channel(session_socket="/tmp/test.sock")
+        channel = Channel(session_socket=temp_socket_path)
 
         mock_reader = asyncio.StreamReader()
         mock_writer = MagicMock()
@@ -127,9 +133,9 @@ class TestChannelRun:
         assert mock_writer.write.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_channel_handles_session_disconnect(self, capsys):
+    async def test_channel_handles_session_disconnect(self, temp_socket_path, capsys):
         """Test channel handles session disconnect."""
-        channel = Channel(session_socket="/tmp/test.sock")
+        channel = Channel(session_socket=temp_socket_path)
 
         mock_reader = asyncio.StreamReader()
         mock_writer = MagicMock()
@@ -157,13 +163,13 @@ class TestRunChannel:
     """Test run_channel function."""
 
     @pytest.mark.asyncio
-    async def test_run_channel_creates_channel(self):
+    async def test_run_channel_creates_channel(self, temp_socket_path):
         """Test run_channel creates Channel instance."""
         with patch("psi_channel.tui.Channel") as mock_channel_class:
             mock_channel = AsyncMock()
             mock_channel_class.return_value = mock_channel
 
-            await run_channel(session_socket="/tmp/test.sock", log_level="ERROR")
+            await run_channel(session_socket=temp_socket_path, log_level="ERROR")
 
-            mock_channel_class.assert_called_once_with(session_socket="/tmp/test.sock")
+            mock_channel_class.assert_called_once_with(session_socket=temp_socket_path)
             mock_channel.run.assert_called_once()

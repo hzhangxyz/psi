@@ -385,16 +385,6 @@ class CreateArgs:
     """Log level (DEBUG, INFO, WARNING, ERROR)"""
 
 
-@dataclass
-class CliArgs:
-    """Workspace CLI with subcommands."""
-
-    mount: MountArgs | None = None
-    unmount: UnmountArgs | None = None
-    snapshot: SnapshotArgs | None = None
-    list: ListArgs | None = None
-
-
 def main_mount() -> None:
     """CLI entry for mount command."""
     args = tyro.cli(MountArgs)
@@ -423,25 +413,3 @@ def main_create() -> None:
     """CLI entry for create command."""
     args = tyro.cli(CreateArgs)
     asyncio.run(run_create(args.source, args.output, args.description, args.log_level))
-
-
-# Keep old main for backward compatibility
-def main() -> None:
-    args = tyro.cli(CliArgs)
-
-    if args.mount:
-        asyncio.run(run_mount(args.mount.squashfs, args.mount.output, args.mount.log_level))
-    elif args.unmount:
-        asyncio.run(run_unmount(args.unmount.workspace, args.unmount.log_level))
-    elif args.snapshot:
-        asyncio.run(
-            run_snapshot(
-                args.snapshot.workspace, args.snapshot.output, args.snapshot.description, args.snapshot.log_level
-            )
-        )
-    elif args.list:
-        run_list(args.list.workspace, args.list.log_level)
-
-
-if __name__ == "__main__":
-    main()

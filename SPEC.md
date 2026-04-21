@@ -30,7 +30,7 @@
 
 启动：
 ```bash
-psi-ai-openai --session-socket /tmp/llm.sock \
+psi-ai-openai --session-socket ./psi-ai.sock \
               --model gpt-4o \
               --api-key $KEY \
               --base-url https://api.openai.com/v1
@@ -51,8 +51,8 @@ psi-ai-openai --session-socket /tmp/llm.sock \
 启动：
 ```bash
 psi-session --workspace ./workspace \
-            --channel-socket /tmp/channel.sock \
-            --ai-socket /tmp/llm.sock \
+            --channel-socket ./channel.sock \
+            --ai-socket ./psi-ai.sock \
             --session-id main
 ```
 
@@ -79,7 +79,7 @@ CREATE TABLE messages (
 
 启动：
 ```bash
-psi-channel-tui --session-socket /tmp/channel.sock
+psi-channel-tui --session-socket ./channel.sock
 ```
 
 ### 2.4 psi-workspace-create / psi-workspace-mount / psi-workspace-umount / psi-workspace-snapshot / psi-workspace-list
@@ -467,6 +467,12 @@ sudo apt install squashfuse fuse-overlayfs squashfs-tools
 - 位置参数使用简短单词（如 `workspace`, `model`）
 - socket 相关参数使用 `*_socket` 格式
 - 所有模块统一提供 `--log-level` 参数
+
+### Socket 路径
+
+- **生产环境**：使用相对路径（如 `./channel.sock`, `./ai.sock`），方便在不同目录运行
+- **测试环境**：统一使用 pytest 的 `tmp_path` fixture（如 `tmp_path / "channel.sock"`），避免使用硬编码的 `/tmp/` 路径
+- socket 文件后缀：`.sock`
 
 ### 文件与目录
 
