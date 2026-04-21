@@ -124,12 +124,12 @@ uv sync
 # 运行测试
 uv run psi-session --workspace ./examples/simple_example ...
 
-# workspace 管理（需要 root）
 # Workspace 管理（使用 FUSE，无需 root）
 # 先安装依赖: sudo apt install squashfuse fuse-overlayfs squashfs-tools
-psi-workspace-create ./examples/simple_example base.sqfs
+psi-workspace-create ./examples/simple_example base.sqfs --tag base
 psi-workspace-mount base.sqfs ./workspace
-psi-workspace-snapshot ./workspace --output new.sqfs
+psi-workspace-snapshot ./workspace v2.sqfs --tag v1
+psi-workspace-umount ./workspace
 ```
 
 ## Python API
@@ -140,7 +140,7 @@ psi-workspace-snapshot ./workspace --output new.sqfs
 from psi_session import run_session
 from psi_ai.openai import run_ai
 from psi_channel.tui import run_channel
-from psi_workspace import run_mount, run_unmount, run_snapshot, run_list
+from psi_workspace import run_create, run_mount, run_umount, run_snapshot
 
 # 启动 AI Caller
 await run_ai(
@@ -162,6 +162,12 @@ await run_session(
 
 # 启动 TUI
 await run_channel(session_socket="./channel.sock")
+
+# Workspace 管理
+await run_create("./examples/simple_example", "base.sqfs", tag="base")
+await run_mount("base.sqfs", "./workspace")
+await run_snapshot("./workspace", "v2.sqfs", tag="v1")
+await run_umount("./workspace")
 
 # Workspace 管理（需要 root）
 await run_mount("agent.sqfs", "./workspace")

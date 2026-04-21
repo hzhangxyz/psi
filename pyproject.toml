@@ -27,9 +27,8 @@ psi-channel-tui = "psi_channel.tui:main"
 psi-ai-openai = "psi_ai.openai:main"
 psi-workspace-create = "psi_workspace:main_create"
 psi-workspace-mount = "psi_workspace:main_mount"
-psi-workspace-umount = "psi_workspace:main_unmount"
+psi-workspace-umount = "psi_workspace:main_umount"
 psi-workspace-snapshot = "psi_workspace:main_snapshot"
-psi-workspace-list = "psi_workspace:main_list"
 
 [build-system]
 requires = ["hatchling"]

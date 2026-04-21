@@ -104,9 +104,8 @@ uv run psi-channel-tui --session-socket ./channel.sock
 | `psi-channel-tui` | TUI 用户界面 | `run_channel()` |
 | `psi-workspace-create` | 从目录创建 SquashFS | `run_create()` |
 | `psi-workspace-mount` | 挂载 SquashFS 为 workspace（无需 root） | `run_mount()` |
-| `psi-workspace-umount` | 卸载 workspace（无需 root） | `run_unmount()` |
+| `psi-workspace-umount` | 卸载 workspace（无需 root） | `run_umount()` |
 | `psi-workspace-snapshot` | 创建快照 | `run_snapshot()` |
-| `psi-workspace-list` | 列出快照历史 | `run_list()` |
 
 **Workspace 依赖（Ubuntu/Debian）:**
 ```bash
@@ -123,14 +122,22 @@ sudo apt install squashfuse fuse-overlayfs squashfs-tools
 import asyncio
 from psi_session import run_session
 from psi_ai.openai import run_ai
+from psi_workspace import run_create, run_mount, run_umount, run_snapshot
 
 async def main():
-    await run_ai(
-        socket="./ai.sock",
-        model="gpt-4o",
-        api_key="...",
-        base_url="https://api.openai.com/v1"
-    )
+    # 创建初始 squashfs
+    await run_create("./examples/simple_example", "base.sqfs", tag="base")
+    
+    # 挂载
+    await run_mount("base.sqfs", "./workspace")
+    
+    # 修改 workspace...
+    
+    # 创建快照
+    await run_snapshot("./workspace", "v2.sqfs", tag="v1")
+    
+    # 卸载
+    await run_umount("./workspace")
     
 asyncio.run(main())
 ```

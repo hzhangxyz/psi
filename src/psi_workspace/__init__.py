@@ -1,99 +1,83 @@
-"""Psi Workspace - SquashFS/OverlayFS manager using FUSE (no root required)."""
+"""Psi Workspace - Delta-based SquashFS/OverlayFS manager using FUSE (no root required)."""
 
 import asyncio
 import json
+import shutil
 import sys
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from tempfile import TemporaryDirectory
 
 import tyro
 from loguru import logger
 from pydantic import BaseModel
 
 
-class SnapshotEntry(BaseModel):
-    """Snapshot metadata entry."""
+class DeltaInfo(BaseModel):
+    """Delta metadata."""
 
-    name: str
-    description: str
+    parent: str | None
+    tag: str | None
     created_at: str
+    description: str
 
 
 class Manifest(BaseModel):
-    """Workspace manifest."""
+    """Workspace manifest with delta chain."""
 
-    current: dict[str, Any] | None = None
-    snapshots: list[SnapshotEntry] = []
+    default_version: str
+    deltas: dict[str, DeltaInfo]
+
+
+class MountInfo(BaseModel):
+    """Mount session info."""
+
+    squashfs_path: str
+    current_version: str
+    workspace_name: str
+    mounted_at: str
 
 
 class WorkspaceManager:
-    """Manages SquashFS and OverlayFS for workspace snapshots using FUSE."""
-
-    manifest_file: str
+    """Manages delta-based SquashFS workspaces using FUSE."""
 
     def __init__(self) -> None:
-        self.manifest_file = "manifest.json"
         logger.debug("WorkspaceManager initialized")
 
-    async def mount(self, squashfs_path: str, output_dir: str) -> None:
-        """Mount a SquashFS image as a writable workspace using FUSE (no root required)."""
-        squashfs = Path(squashfs_path).resolve()
-        workspace = Path(output_dir).resolve()
+    def _generate_uuid(self) -> str:
+        """Generate UUID for delta folder name."""
+        return uuid.uuid4().hex
 
-        logger.info(f"Mounting workspace | squashfs={squashfs} | output={workspace}")
+    def _build_parent_chain(self, manifest: Manifest, version: str) -> list[str]:
+        """Build chain from version to orphan (newest to oldest)."""
+        chain = [version]
+        current = version
+        while True:
+            parent = manifest.deltas[current].parent
+            if parent is None:
+                break
+            chain.append(parent)
+            current = parent
+        return chain
 
-        # Create directories
-        upper_dir = Path(str(workspace) + ".upper")
-        work_dir = Path(str(workspace) + ".work")
-        lower_dir = Path(str(workspace) + ".lower")
-
-        upper_dir.mkdir(parents=True, exist_ok=True)
-        work_dir.mkdir(parents=True, exist_ok=True)
-        lower_dir.mkdir(parents=True, exist_ok=True)
-        workspace.mkdir(parents=True, exist_ok=True)
-
-        logger.debug(f"Directories created | upper={upper_dir} | work={work_dir} | lower={lower_dir}")
-
-        # Mount squashfs to lower using squashfuse (FUSE, no root)
-        logger.debug(f"Mounting squashfs with squashfuse | source={squashfs} | target={lower_dir}")
+    async def _mount_squashfs(self, sqfs_path: str, target_dir: Path) -> None:
+        """Mount squashfs to directory using squashfuse."""
+        logger.debug(f"Mounting squashfs | source={sqfs_path} | target={target_dir}")
         proc = await asyncio.create_subprocess_exec(
             "squashfuse",
-            str(squashfs),
-            str(lower_dir),
+            sqfs_path,
+            str(target_dir),
         )
         await proc.wait()
         if proc.returncode != 0:
             raise RuntimeError(f"squashfuse failed with code {proc.returncode}")
-        logger.info(f"SquashFS mounted (FUSE) | path={lower_dir}")
-
-        # Mount overlayfs using fuse-overlayfs (FUSE, no root)
-        logger.debug(
-            f"Mounting overlayfs with fuse-overlayfs | lower={lower_dir} | upper={upper_dir} | work={work_dir}"
-        )
-        proc = await asyncio.create_subprocess_exec(
-            "fuse-overlayfs",
-            "-o",
-            f"lowerdir={lower_dir},upperdir={upper_dir},workdir={work_dir}",
-            str(workspace),
-        )
-        await proc.wait()
-        if proc.returncode != 0:
-            # Cleanup: unmount squashfuse if overlay failed
-            await self._unmount_fuse(lower_dir)
-            raise RuntimeError(f"fuse-overlayfs failed with code {proc.returncode}")
-        logger.info(f"OverlayFS mounted (FUSE) | path={workspace}")
-
-        # Create/update manifest
-        manifest_path = workspace.parent / self.manifest_file
-        self._update_manifest(manifest_path, squashfs.name, "mounted")
-
-        logger.info(f"Workspace mounted successfully | squashfs={squashfs_path} | workspace={output_dir}")
+        logger.info(f"Squashfs mounted | path={target_dir}")
 
     async def _unmount_fuse(self, mount_point: Path) -> None:
-        """Unmount a FUSE mount point using fusermount."""
-        logger.debug(f"Unmounting FUSE mount | path={mount_point}")
+        """Unmount a FUSE mount using fusermount."""
+        logger.debug(f"Unmounting FUSE | path={mount_point}")
         proc = await asyncio.create_subprocess_exec(
             "fusermount",
             "-u",
@@ -101,8 +85,7 @@ class WorkspaceManager:
         )
         await proc.wait()
         if proc.returncode != 0:
-            logger.warning(f"fusermount failed with code {proc.returncode}, trying lazy unmount")
-            # Try lazy unmount
+            logger.warning("fusermount failed, trying lazy unmount")
             proc = await asyncio.create_subprocess_exec(
                 "fusermount",
                 "-u",
@@ -110,199 +93,379 @@ class WorkspaceManager:
                 str(mount_point),
             )
             await proc.wait()
-        logger.info(f"FUSE mount unmounted | path={mount_point}")
+        logger.info(f"FUSE unmounted | path={mount_point}")
 
-    async def unmount(self, workspace_dir: str) -> None:
-        """Unmount a workspace and clean up (no root required)."""
-        workspace = Path(workspace_dir).resolve()
-
-        logger.info(f"Unmounting workspace | path={workspace}")
-
-        # Unmount fuse-overlayfs
-        await self._unmount_fuse(workspace)
-        logger.info(f"OverlayFS unmounted | path={workspace}")
-
-        # Unmount squashfuse (lower)
-        lower_dir = Path(str(workspace) + ".lower")
-        if lower_dir.exists():
-            await self._unmount_fuse(lower_dir)
-            logger.info(f"SquashFS unmounted | path={lower_dir}")
-
-        logger.info(f"Workspace unmounted successfully | workspace={workspace_dir}")
-
-    async def snapshot(
+    async def _mount_overlay(
         self,
-        workspace_dir: str,
-        output_path: str,
-        description: str = "",
+        lower_dirs: list[Path],
+        upper_dir: Path,
+        work_dir: Path,
+        target_dir: Path,
     ) -> None:
-        """Create a new SquashFS snapshot from workspace changes."""
-        workspace = Path(workspace_dir).resolve()
-        upper_dir = Path(str(workspace) + ".upper")
-        output = Path(output_path).resolve()
+        """Mount OverlayFS using fuse-overlayfs."""
+        lowerdir = ":".join(str(d) for d in lower_dirs)
+        logger.debug(
+            f"Mounting overlay | lowerdir={lowerdir} | upper={upper_dir} | work={work_dir} | target={target_dir}"
+        )
+        upper_dir.mkdir(parents=True, exist_ok=True)
+        work_dir.mkdir(parents=True, exist_ok=True)
+        proc = await asyncio.create_subprocess_exec(
+            "fuse-overlayfs",
+            "-o",
+            f"lowerdir={lowerdir},upperdir={upper_dir},workdir={work_dir}",
+            str(target_dir),
+        )
+        await proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError(f"fuse-overlayfs failed with code {proc.returncode}")
+        logger.info(f"Overlay mounted | path={target_dir}")
 
-        logger.info(f"Creating snapshot | workspace={workspace} | output={output} | description={description}")
+    async def _unpack_squashfs(self, sqfs_path: str, target_dir: Path) -> None:
+        """Unpack squashfs to directory using unsquashfs."""
+        logger.debug(f"Unpacking squashfs | source={sqfs_path} | target={target_dir}")
+        proc = await asyncio.create_subprocess_exec(
+            "unsquashfs",
+            "-d",
+            str(target_dir),
+            sqfs_path,
+        )
+        await proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError(f"unsquashfs failed with code {proc.returncode}")
+        logger.info(f"Squashfs unpacked | path={target_dir}")
 
-        if not upper_dir.exists():
-            logger.warning(f"No changes to snapshot | upper_dir={upper_dir} not found")
-            print("No changes to snapshot (upper dir not found)", file=sys.stderr)
-            return
-
-        # Create squashfs from upper directory
-        logger.debug(f"Creating squashfs | source={upper_dir} | output={output}")
+    async def _pack_squashfs(self, source_dir: Path, output_path: Path) -> None:
+        """Pack directory to squashfs using mksquashfs."""
+        logger.debug(f"Packing squashfs | source={source_dir} | output={output_path}")
         proc = await asyncio.create_subprocess_exec(
             "mksquashfs",
-            str(upper_dir),
-            str(output),
+            str(source_dir),
+            str(output_path),
             "-noappend",
         )
         await proc.wait()
         if proc.returncode != 0:
             raise RuntimeError(f"mksquashfs failed with code {proc.returncode}")
-        logger.info(f"SquashFS created | path={output}")
+        logger.info(f"Squashfs packed | path={output_path}")
 
-        # Update manifest with snapshot history
-        manifest_path = workspace.parent / self.manifest_file
-        self._add_snapshot(manifest_path, output.name, description)
-
-        logger.info(f"Snapshot created successfully | output={output_path}")
-
-    async def create(self, source_dir: str, output_path: str, description: str = "") -> None:
-        """Create a new SquashFS image from a directory."""
+    async def create(
+        self,
+        source_dir: str,
+        output_path: str,
+        tag: str | None = None,
+        description: str = "",
+    ) -> None:
+        """Create initial squashfs from source directory."""
         source = Path(source_dir).resolve()
         output = Path(output_path).resolve()
 
-        logger.info(f"Creating SquashFS | source={source} | output={output}")
+        logger.info(f"Creating squashfs | source={source} | output={output}")
 
         if not source.exists():
             raise RuntimeError(f"Source directory not found: {source}")
 
-        # Create squashfs from source directory
-        logger.debug(f"Running mksquashfs | source={source} | output={output}")
-        proc = await asyncio.create_subprocess_exec(
-            "mksquashfs",
-            str(source),
-            str(output),
-            "-noappend",
-        )
-        await proc.wait()
-        if proc.returncode != 0:
-            raise RuntimeError(f"mksquashfs failed with code {proc.returncode}")
-        logger.info(f"SquashFS created | path={output}")
+        delta_uuid = self._generate_uuid()
+        logger.debug(f"Generated delta UUID | uuid={delta_uuid}")
 
-        # Create initial manifest in source parent directory
-        manifest_path = source.parent / self.manifest_file
-        self._add_snapshot(manifest_path, output.name, description or f"Initial image from {source.name}")
+        # Create temp directory with manifest + delta
+        with TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
 
-        logger.info(f"SquashFS created successfully | output={output_path}")
+            # Copy source to delta folder
+            delta_dir = tmp / delta_uuid
+            shutil.copytree(source, delta_dir)
+            logger.debug(f"Copied source to delta | delta_dir={delta_dir}")
 
-    def list_snapshots(self, workspace_dir: str) -> None:
-        """List all snapshots for a workspace."""
+            # Create manifest
+            manifest = Manifest(
+                default_version=delta_uuid,
+                deltas={
+                    delta_uuid: DeltaInfo(
+                        parent=None,
+                        tag=tag,
+                        created_at=datetime.now().isoformat(),
+                        description=description or f"Initial from {source.name}",
+                    )
+                },
+            )
+            manifest_file = tmp / "manifest.json"
+            manifest_file.write_text(manifest.model_dump_json(indent=2))
+            logger.debug(f"Created manifest | default_version={delta_uuid}")
+
+            # Pack to squashfs
+            await self._pack_squashfs(tmp, output)
+
+        logger.info(f"Created squashfs successfully | output={output}")
+
+    async def mount(
+        self,
+        squashfs_path: str,
+        workspace_dir: str,
+        version: str | None = None,
+    ) -> None:
+        """Mount squashfs as writable workspace."""
+        sqfs = Path(squashfs_path).resolve()
         workspace = Path(workspace_dir).resolve()
-        manifest_path = workspace.parent / self.manifest_file
+        workspace_name = workspace.name
 
-        logger.debug(f"Listing snapshots | workspace={workspace} | manifest={manifest_path}")
+        logger.info(f"Mounting workspace | squashfs={sqfs} | workspace={workspace}")
 
-        if not manifest_path.exists():
-            logger.warning(f"Manifest not found | path={manifest_path}")
-            print("No snapshots found")
+        if not sqfs.exists():
+            raise RuntimeError(f"Squashfs not found: {sqfs}")
+
+        # Create .psi helper directory
+        psi_dir = workspace.parent / ".psi"
+        psi_dir.mkdir(parents=True, exist_ok=True)
+
+        lower_dir = psi_dir / f"lower-{workspace_name}"
+        upper_dir = psi_dir / f"upper-{workspace_name}"
+        work_dir = psi_dir / f"work-{workspace_name}"
+
+        # Mount squashfs to lower
+        lower_dir.mkdir(parents=True, exist_ok=True)
+        await self._mount_squashfs(str(sqfs), lower_dir)
+
+        # Read manifest and resolve version
+        manifest_file = lower_dir / "manifest.json"
+        if not manifest_file.exists():
+            await self._unmount_fuse(lower_dir)
+            raise RuntimeError("No manifest.json in squashfs")
+
+        manifest = Manifest.model_validate(json.loads(manifest_file.read_text()))
+        current_version = version or manifest.default_version
+
+        if current_version not in manifest.deltas:
+            await self._unmount_fuse(lower_dir)
+            raise RuntimeError(f"Version {current_version} not found in manifest")
+
+        logger.debug(f"Resolved version | version={current_version}")
+
+        # Build parent chain
+        chain = self._build_parent_chain(manifest, current_version)
+        logger.debug(f"Parent chain | chain={chain}")
+
+        # Build lowerdirs (newest to oldest)
+        lower_dirs = [lower_dir / uuid_name for uuid_name in chain]
+
+        # Verify all delta directories exist
+        for d in lower_dirs:
+            if not d.exists():
+                await self._unmount_fuse(lower_dir)
+                raise RuntimeError(f"Delta directory not found: {d}")
+
+        # Mount overlay
+        workspace.mkdir(parents=True, exist_ok=True)
+        await self._mount_overlay(lower_dirs, upper_dir, work_dir, workspace)
+
+        # Write mount info
+        mount_info = MountInfo(
+            squashfs_path=str(sqfs),
+            current_version=current_version,
+            workspace_name=workspace_name,
+            mounted_at=datetime.now().isoformat(),
+        )
+        mount_info_file = psi_dir / f"mount-{workspace_name}.json"
+        mount_info_file.write_text(mount_info.model_dump_json(indent=2))
+        logger.debug(f"Written mount info | path={mount_info_file}")
+
+        logger.info(f"Mounted workspace successfully | version={current_version}")
+
+    async def snapshot(
+        self,
+        workspace_dir: str,
+        output_path: str | None = None,
+        tag: str | None = None,
+        description: str = "",
+    ) -> None:
+        """Create snapshot from workspace changes."""
+        workspace = Path(workspace_dir).resolve()
+        workspace_name = workspace.name
+        psi_dir = workspace.parent / ".psi"
+
+        logger.info(f"Creating snapshot | workspace={workspace}")
+
+        # Read mount info
+        mount_info_file = psi_dir / f"mount-{workspace_name}.json"
+        if not mount_info_file.exists():
+            raise RuntimeError(f"Mount info not found: {mount_info_file}")
+
+        mount_info = MountInfo.model_validate(json.loads(mount_info_file.read_text()))
+        original_sqfs = Path(mount_info.squashfs_path)
+
+        # Determine output path
+        output = Path(output_path).resolve() if output_path else original_sqfs
+        logger.debug(f"Output path | output={output}")
+
+        # Read upper directory (changes)
+        upper_dir = psi_dir / f"upper-{workspace_name}"
+        if not upper_dir.exists() or not any(upper_dir.iterdir()):
+            logger.warning("No changes to snapshot")
+            print("No changes to snapshot", file=sys.stderr)
             return
 
-        manifest_data = json.loads(manifest_path.read_text())
-        manifest = Manifest.model_validate(manifest_data)
-        snapshots = manifest.snapshots
+        new_uuid = self._generate_uuid()
+        logger.debug(f"Generated new delta UUID | uuid={new_uuid}")
 
-        logger.info(f"Found {len(snapshots)} snapshots")
+        # Unmount overlay first
+        await self._unmount_fuse(workspace)
+        logger.info("Overlay unmounted")
 
-        print(f"Snapshots for {workspace_dir}:")
-        for snap in snapshots:
-            print(f"  - {snap.name}: {snap.description} ({snap.created_at})")
-            logger.debug(f"Snapshot | name={snap.name} | created_at={snap.created_at}")
+        # Unmount squashfs
+        lower_dir = psi_dir / f"lower-{workspace_name}"
+        await self._unmount_fuse(lower_dir)
+        logger.info("Squashfs unmounted")
 
-    def _update_manifest(self, manifest_path: Path, name: str, status: str) -> None:
-        """Update manifest file."""
-        logger.debug(f"Updating manifest | path={manifest_path} | name={name} | status={status}")
+        # Unpack original squashfs to temp
+        with TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
 
-        if manifest_path.exists():
-            manifest_data = json.loads(manifest_path.read_text())
-            manifest = Manifest.model_validate(manifest_data)
+            await self._unpack_squashfs(str(original_sqfs), tmp)
+
+            # Read existing manifest
+            manifest_file = tmp / "manifest.json"
+            manifest = Manifest.model_validate(json.loads(manifest_file.read_text()))
+
+            # Copy upper changes to new delta
+            new_delta_dir = tmp / new_uuid
+            shutil.copytree(upper_dir, new_delta_dir)
+            logger.debug(f"Copied upper to new delta | delta={new_uuid}")
+
+            # Add new delta to manifest
+            manifest.deltas[new_uuid] = DeltaInfo(
+                parent=mount_info.current_version,
+                tag=tag,
+                created_at=datetime.now().isoformat(),
+                description=description,
+            )
+            manifest.default_version = new_uuid
+
+            manifest_file.write_text(manifest.model_dump_json(indent=2))
+            logger.debug(f"Updated manifest | new_uuid={new_uuid}")
+
+            # Pack new squashfs (to temp file first for safety)
+            temp_output = tmp / "new.sqfs"
+            await self._pack_squashfs(tmp, temp_output)
+
+            # Move to final location
+            shutil.move(str(temp_output), str(output))
+            logger.info(f"Moved new squashfs to output | output={output}")
+
+        # Remount with new squashfs
+        lower_dir.mkdir(parents=True, exist_ok=True)
+        await self._mount_squashfs(str(output), lower_dir)
+
+        # Build new chain
+        manifest_file = lower_dir / "manifest.json"
+        manifest = Manifest.model_validate(json.loads(manifest_file.read_text()))
+        chain = self._build_parent_chain(manifest, new_uuid)
+        lower_dirs = [lower_dir / uuid_name for uuid_name in chain]
+
+        # Clear upper before remount
+        upper_dir.mkdir(parents=True, exist_ok=True)
+        for item in upper_dir.iterdir():
+            if item.is_dir():
+                shutil.rmtree(item)
+            else:
+                item.unlink()
+        logger.debug("Cleared upper directory")
+
+        # Remount overlay
+        work_dir = psi_dir / f"work-{workspace_name}"
+        await self._mount_overlay(lower_dirs, upper_dir, work_dir, workspace)
+
+        # Update mount info
+        mount_info.current_version = new_uuid
+        mount_info.squashfs_path = str(output)
+        mount_info.mounted_at = datetime.now().isoformat()
+        mount_info_file.write_text(mount_info.model_dump_json(indent=2))
+
+        logger.info(f"Snapshot created successfully | version={new_uuid}")
+
+    async def umount(self, workspace_dir: str) -> None:
+        """Unmount workspace and optionally cleanup."""
+        workspace = Path(workspace_dir).resolve()
+        workspace_name = workspace.name
+        psi_dir = workspace.parent / ".psi"
+
+        logger.info(f"Unmounting workspace | workspace={workspace}")
+
+        # Unmount overlay
+        await self._unmount_fuse(workspace)
+        logger.info("Overlay unmounted")
+
+        # Unmount squashfs
+        lower_dir = psi_dir / f"lower-{workspace_name}"
+        if lower_dir.exists():
+            await self._unmount_fuse(lower_dir)
+            logger.info("Squashfs unmounted")
+
+        # Remove mount info
+        mount_info_file = psi_dir / f"mount-{workspace_name}.json"
+        if mount_info_file.exists():
+            mount_info_file.unlink()
+            logger.debug("Removed mount info")
+
+        # Check if other mounts exist
+        other_mounts = list(psi_dir.glob("mount-*.json"))
+        if not other_mounts:
+            # No other mounts, clean up .psi
+            if psi_dir.exists():
+                shutil.rmtree(psi_dir)
+            logger.info("Cleaned up .psi directory")
         else:
-            manifest = Manifest()
+            logger.debug(f"Other mounts exist | count={len(other_mounts)}")
 
-        manifest.current = {
-            "name": name,
-            "status": status,
-            "mounted_at": datetime.now().isoformat(),
-        }
-
-        manifest_path.write_text(manifest.model_dump_json(indent=2))
-        logger.debug(f"Manifest updated | current={manifest.current}")
-
-    def _add_snapshot(self, manifest_path: Path, name: str, description: str) -> None:
-        """Add snapshot entry to manifest."""
-        logger.debug(f"Adding snapshot to manifest | path={manifest_path} | name={name}")
-
-        if manifest_path.exists():
-            manifest_data = json.loads(manifest_path.read_text())
-            manifest = Manifest.model_validate(manifest_data)
-        else:
-            manifest = Manifest()
-
-        snapshot_entry = SnapshotEntry(
-            name=name,
-            description=description,
-            created_at=datetime.now().isoformat(),
-        )
-
-        manifest.snapshots.append(snapshot_entry)
-        manifest_path.write_text(manifest.model_dump_json(indent=2))
-
-        logger.debug(f"Snapshot entry added | snapshot={snapshot_entry}")
+        logger.info("Unmounted successfully")
 
 
-async def run_mount(squashfs_path: str, output_dir: str, log_level: str = "INFO") -> None:
-    """Python function interface for mount."""
-    _setup_logger(log_level)
-    manager = WorkspaceManager()
-    await manager.mount(squashfs_path, output_dir)
-
-
-async def run_unmount(workspace_dir: str, log_level: str = "INFO") -> None:
-    """Python function interface for unmount."""
-    _setup_logger(log_level)
-    manager = WorkspaceManager()
-    await manager.unmount(workspace_dir)
-
-
-async def run_snapshot(
-    workspace_dir: str,
-    output_path: str,
-    description: str = "",
-    log_level: str = "INFO",
-) -> None:
-    """Python function interface for snapshot."""
-    _setup_logger(log_level)
-    manager = WorkspaceManager()
-    await manager.snapshot(workspace_dir, output_path, description)
+# ============================================================================
+# Python API
+# ============================================================================
 
 
 async def run_create(
     source_dir: str,
     output_path: str,
+    tag: str | None = None,
     description: str = "",
     log_level: str = "INFO",
 ) -> None:
-    """Python function interface for create."""
+    """Python API for create."""
     _setup_logger(log_level)
     manager = WorkspaceManager()
-    await manager.create(source_dir, output_path, description)
+    await manager.create(source_dir, output_path, tag, description)
 
 
-def run_list(workspace_dir: str, log_level: str = "INFO") -> None:
-    """Python function interface for list."""
+async def run_mount(
+    squashfs_path: str,
+    workspace_dir: str,
+    version: str | None = None,
+    log_level: str = "INFO",
+) -> None:
+    """Python API for mount."""
     _setup_logger(log_level)
     manager = WorkspaceManager()
-    manager.list_snapshots(workspace_dir)
+    await manager.mount(squashfs_path, workspace_dir, version)
+
+
+async def run_snapshot(
+    workspace_dir: str,
+    output_path: str | None = None,
+    tag: str | None = None,
+    description: str = "",
+    log_level: str = "INFO",
+) -> None:
+    """Python API for snapshot."""
+    _setup_logger(log_level)
+    manager = WorkspaceManager()
+    await manager.snapshot(workspace_dir, output_path, tag, description)
+
+
+async def run_umount(workspace_dir: str, log_level: str = "INFO") -> None:
+    """Python API for umount."""
+    _setup_logger(log_level)
+    manager = WorkspaceManager()
+    await manager.umount(workspace_dir)
 
 
 def _setup_logger(log_level: str) -> None:
@@ -315,101 +478,86 @@ def _setup_logger(log_level: str) -> None:
     )
 
 
-@dataclass
-class MountArgs:
-    """Mount SquashFS as workspace."""
-
-    squashfs: str
-    """SquashFS image path"""
-
-    output: str
-    """Output workspace directory"""
-
-    log_level: str = "INFO"
-    """Log level (DEBUG, INFO, WARNING, ERROR)"""
-
-
-@dataclass
-class UnmountArgs:
-    """Unmount workspace."""
-
-    workspace: str
-    """Workspace directory"""
-
-    log_level: str = "INFO"
-    """Log level (DEBUG, INFO, WARNING, ERROR)"""
-
-
-@dataclass
-class SnapshotArgs:
-    """Create snapshot."""
-
-    workspace: str
-    """Workspace directory"""
-
-    output: str
-    """Output SquashFS path"""
-
-    description: str = ""
-    """Snapshot description"""
-
-    log_level: str = "INFO"
-    """Log level (DEBUG, INFO, WARNING, ERROR)"""
-
-
-@dataclass
-class ListArgs:
-    """List snapshots."""
-
-    workspace: str
-    """Workspace directory"""
-
-    log_level: str = "INFO"
-    """Log level (DEBUG, INFO, WARNING, ERROR)"""
+# ============================================================================
+# CLI
+# ============================================================================
 
 
 @dataclass
 class CreateArgs:
-    """Create SquashFS from directory."""
+    """Create initial squashfs from directory."""
 
     source: str
-    """Source directory"""
-
+    """Source directory."""
     output: str
-    """Output SquashFS path"""
-
+    """Output squashfs path."""
+    tag: str | None = None
+    """Tag for this delta."""
     description: str = ""
-    """Snapshot description"""
-
+    """Description."""
     log_level: str = "INFO"
-    """Log level (DEBUG, INFO, WARNING, ERROR)"""
+    """Log level."""
 
 
-def main_mount() -> None:
-    """CLI entry for mount command."""
-    args = tyro.cli(MountArgs)
-    asyncio.run(run_mount(args.squashfs, args.output, args.log_level))
+@dataclass
+class MountArgs:
+    """Mount squashfs as workspace."""
+
+    squashfs: str
+    """Squashfs path."""
+    workspace: str
+    """Workspace directory."""
+    version: str | None = None
+    """Version to mount (default: use default_version)."""
+    log_level: str = "INFO"
+    """Log level."""
 
 
-def main_unmount() -> None:
-    """CLI entry for unmount command."""
-    args = tyro.cli(UnmountArgs)
-    asyncio.run(run_unmount(args.workspace, args.log_level))
+@dataclass
+class SnapshotArgs:
+    """Create snapshot from workspace."""
+
+    workspace: str
+    """Workspace directory."""
+    output: str | None = None
+    """Output squashfs path (default: overwrite original)."""
+    tag: str | None = None
+    """Tag for this delta."""
+    description: str = ""
+    """Description."""
+    log_level: str = "INFO"
+    """Log level."""
 
 
-def main_snapshot() -> None:
-    """CLI entry for snapshot command."""
-    args = tyro.cli(SnapshotArgs)
-    asyncio.run(run_snapshot(args.workspace, args.output, args.description, args.log_level))
+@dataclass
+class UmountArgs:
+    """Unmount workspace."""
 
-
-def main_list() -> None:
-    """CLI entry for list command."""
-    args = tyro.cli(ListArgs)
-    run_list(args.workspace, args.log_level)
+    workspace: str
+    """Workspace directory."""
+    log_level: str = "INFO"
+    """Log level."""
 
 
 def main_create() -> None:
-    """CLI entry for create command."""
+    """CLI for create."""
     args = tyro.cli(CreateArgs)
-    asyncio.run(run_create(args.source, args.output, args.description, args.log_level))
+    asyncio.run(run_create(args.source, args.output, args.tag, args.description, args.log_level))
+
+
+def main_mount() -> None:
+    """CLI for mount."""
+    args = tyro.cli(MountArgs)
+    asyncio.run(run_mount(args.squashfs, args.workspace, args.version, args.log_level))
+
+
+def main_snapshot() -> None:
+    """CLI for snapshot."""
+    args = tyro.cli(SnapshotArgs)
+    asyncio.run(run_snapshot(args.workspace, args.output, args.tag, args.description, args.log_level))
+
+
+def main_umount() -> None:
+    """CLI for umount."""
+    args = tyro.cli(UmountArgs)
+    asyncio.run(run_umount(args.workspace, args.log_level))

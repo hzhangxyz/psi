@@ -82,17 +82,18 @@ CREATE TABLE messages (
 psi-channel-tui --session-socket ./channel.sock
 ```
 
-### 2.4 psi-workspace-create / psi-workspace-mount / psi-workspace-umount / psi-workspace-snapshot / psi-workspace-list
+### 2.4 psi-workspace-create / psi-workspace-mount / psi-workspace-umount / psi-workspace-snapshot
 
 职责：
-- 挂载 SquashFS 镜像为可写 workspace（使用 FUSE，无需 root）。
-- 创建快照（将修改打包为新 SquashFS）。
-- 保留快照历史（manifest.json）。
+- 创建基于 delta 的 SquashFS workspace（使用 FUSE，无需 root）。
+- 每个 squashfs 包含多个 delta 层，类似 Docker 镜像层级结构。
+- 创建快照时将修改作为新 delta 添加到 squashfs。
 
 依赖：
 - `squashfuse`: FUSE SquashFS 挂载工具
 - `fuse-overlayfs`: FUSE OverlayFS 实现
 - `mksquashfs`: 创建 SquashFS 镜像
+- `unsquashfs`: 解包 SquashFS 镜像
 
 安装依赖（Ubuntu/Debian）：
 ```bash
@@ -101,20 +102,85 @@ sudo apt install squashfuse fuse-overlayfs squashfs-tools
 
 启动：
 ```bash
-psi-workspace-create ./examples/simple_example base.sqfs --description "initial"
+# 创建初始 squashfs（从目录）
+psi-workspace-create ./examples/simple_example base.sqfs --tag base --description "initial"
+
+# 挂载为可写 workspace
 psi-workspace-mount base.sqfs ./workspace
-psi-workspace-snapshot ./workspace --output new.sqfs --description "v2"
+
+# 修改 workspace...
+
+# 创建快照（输出到新文件）
+psi-workspace-snapshot ./workspace v2.sqfs --tag v1 --description "added tool"
+
+# 创建快照（覆盖原文件）
+psi-workspace-snapshot ./workspace --tag v2
+
+# 挂载特定版本
+psi-workspace-mount v2.sqfs ./workspace --version <uuid>
+
+# 卸载
 psi-workspace-umount ./workspace
-psi-workspace-list ./workspace
 ```
 
-OverlayFS 目录结构：
+Squashfs 内部结构：
 ```
-workspace/           # 挂载点（Agent 看到的）
-workspace.lower/     # SquashFS 挂载（只读）
-workspace.upper/     # 可写层（修改存这里）
-workspace.work/      # OverlayFS work 目录
-manifest.json        # 快照历史
+base.sqfs
+├── manifest.json            # delta 关系和默认版本
+├── uuid-aaaa1111/           # delta (orphan, 初始内容)
+│   ├── AGENT.md
+│   ├── tools/
+│   └── ...
+├── uuid-bbbb2222/           # delta (parent: uuid-aaaa1111)
+│   └── tools/new_tool.py    # 只包含改动文件
+└── uuid-cccc3333/           # delta (parent: uuid-bbbb2222)
+    └── AGENT.md             # 只包含改动文件
+```
+
+Manifest 结构：
+```json
+{
+  "default_version": "uuid-cccc3333",
+  "deltas": {
+    "uuid-aaaa1111": {
+      "parent": null,
+      "tag": "base",
+      "created_at": "...",
+      "description": "initial"
+    },
+    "uuid-bbbb2222": {
+      "parent": "uuid-aaaa1111",
+      "tag": "v1",
+      "created_at": "...",
+      "description": "..."
+    },
+    "uuid-cccc3333": {
+      "parent": "uuid-bbbb2222",
+      "tag": "v2",
+      "created_at": "...",
+      "description": "..."
+    }
+  }
+}
+```
+
+挂载目录结构：
+```
+./workspace/                  # 挂载点（Agent 看到的完整视图）
+./.psi/                       # 隐藏辅助目录
+├── lower-workspace/          # SquashFS 挂载（只读）
+│   ├── manifest.json
+│   ├── uuid-aaaa1111/
+│   ├── uuid-bbbb2222/
+│   └── uuid-cccc3333/
+├── upper-workspace/          # OverlayFS upper（改动）
+├── work-workspace/           # OverlayFS work
+└── mount-workspace.json      # 挂载信息（原 sqfs 路径、当前版本）
+```
+
+OverlayFS lowerdir 链（从新到旧，新改动覆盖旧文件）：
+```
+lowerdir = lower/uuid-cccc3333:lower/uuid-bbbb2222:lower/uuid-aaaa1111
 ```
 
 ## 3. 通信协议

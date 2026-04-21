@@ -7,142 +7,128 @@ from pathlib import Path
 
 import pytest
 
-from psi_workspace import Manifest, SnapshotEntry, WorkspaceManager
+from psi_workspace import DeltaInfo, Manifest, MountInfo, WorkspaceManager
 
 # Check if FUSE tools are available
-FUSE_AVAILABLE = all(shutil.which(tool) for tool in ["squashfuse", "fuse-overlayfs", "mksquashfs", "fusermount"])
+FUSE_AVAILABLE = all(
+    shutil.which(tool) for tool in ["squashfuse", "fuse-overlayfs", "mksquashfs", "unsquashfs", "fusermount"]
+)
 
 
-class TestSnapshotEntry:
-    """Test SnapshotEntry pydantic model."""
+class TestDeltaInfo:
+    """Test DeltaInfo pydantic model."""
 
-    def test_snapshot_entry_creation(self):
-        """Test creating SnapshotEntry."""
-        entry = SnapshotEntry(
-            name="v1.sqfs",
-            description="first snapshot",
-            created_at="2026-04-20T10:00:00",
+    def test_delta_info_creation(self):
+        """Test creating DeltaInfo."""
+        entry = DeltaInfo(
+            parent=None,
+            tag="base",
+            created_at="2026-04-21T10:00:00",
+            description="initial",
         )
-        assert entry.name == "v1.sqfs"
-        assert entry.description == "first snapshot"
-        assert entry.created_at == "2026-04-20T10:00:00"
+        assert entry.parent is None
+        assert entry.tag == "base"
+        assert entry.created_at == "2026-04-21T10:00:00"
+        assert entry.description == "initial"
 
-    def test_snapshot_entry_json(self):
-        """Test SnapshotEntry JSON serialization."""
-        entry = SnapshotEntry(
-            name="v1.sqfs",
-            description="first",
-            created_at="2026-04-20T10:00:00",
+    def test_delta_info_with_parent(self):
+        """Test DeltaInfo with parent."""
+        entry = DeltaInfo(
+            parent="uuid-parent",
+            tag="v1",
+            created_at="2026-04-21T11:00:00",
+            description="update",
         )
+        assert entry.parent == "uuid-parent"
+
+    def test_delta_info_json(self):
+        """Test DeltaInfo JSON serialization."""
+        entry = DeltaInfo(parent=None, tag="base", created_at="2026-04-21T10:00:00", description="initial")
         json_data = entry.model_dump_json()
         parsed = json.loads(json_data)
-        assert parsed["name"] == "v1.sqfs"
+        assert parsed["parent"] is None
+        assert parsed["tag"] == "base"
 
 
 class TestManifest:
     """Test Manifest pydantic model."""
 
-    def test_manifest_empty(self):
-        """Test empty manifest."""
-        manifest = Manifest()
-        assert manifest.current is None
-        assert manifest.snapshots == []
+    def test_manifest_creation(self):
+        """Test creating Manifest."""
+        delta = DeltaInfo(parent=None, tag="base", created_at="2026-04-21T10:00:00", description="initial")
+        manifest = Manifest(default_version="uuid-aaaa", deltas={"uuid-aaaa": delta})
+        assert manifest.default_version == "uuid-aaaa"
+        assert len(manifest.deltas) == 1
 
-    def test_manifest_with_current(self):
-        """Test manifest with current workspace."""
-        manifest = Manifest(
-            current={"name": "base.sqfs", "status": "mounted"},
-        )
-        assert manifest.current is not None
-        assert manifest.current["name"] == "base.sqfs"
-
-    def test_manifest_with_snapshots(self):
-        """Test manifest with snapshots."""
-        entry1 = SnapshotEntry(name="v1.sqfs", description="first", created_at="2026-01-01")
-        entry2 = SnapshotEntry(name="v2.sqfs", description="second", created_at="2026-02-01")
-        manifest = Manifest(snapshots=[entry1, entry2])
-        assert len(manifest.snapshots) == 2
-        assert manifest.snapshots[0].name == "v1.sqfs"
+    def test_manifest_with_multiple_deltas(self):
+        """Test Manifest with multiple deltas."""
+        delta1 = DeltaInfo(parent=None, tag="base", created_at="2026-01-01", description="initial")
+        delta2 = DeltaInfo(parent="uuid-aaaa", tag="v1", created_at="2026-02-01", description="update")
+        manifest = Manifest(default_version="uuid-bbbb", deltas={"uuid-aaaa": delta1, "uuid-bbbb": delta2})
+        assert len(manifest.deltas) == 2
+        assert manifest.deltas["uuid-bbbb"].parent == "uuid-aaaa"
 
     def test_manifest_json_roundtrip(self):
         """Test manifest JSON serialization and deserialization."""
-        entry = SnapshotEntry(name="v1.sqfs", description="first", created_at="2026-01-01")
-        manifest = Manifest(
-            current={"name": "base.sqfs", "status": "mounted"},
-            snapshots=[entry],
-        )
+        delta = DeltaInfo(parent=None, tag="base", created_at="2026-01-01", description="initial")
+        manifest = Manifest(default_version="uuid-aaaa", deltas={"uuid-aaaa": delta})
         json_str = manifest.model_dump_json(indent=2)
         parsed = Manifest.model_validate(json.loads(json_str))
-        assert parsed.current is not None
-        assert parsed.current["name"] == "base.sqfs"
-        assert len(parsed.snapshots) == 1
+        assert parsed.default_version == "uuid-aaaa"
+        assert parsed.deltas["uuid-aaaa"].tag == "base"
+
+
+class TestMountInfo:
+    """Test MountInfo pydantic model."""
+
+    def test_mount_info_creation(self):
+        """Test creating MountInfo."""
+        info = MountInfo(
+            squashfs_path="/path/to/base.sqfs",
+            current_version="uuid-aaaa",
+            workspace_name="myworkspace",
+            mounted_at="2026-04-21T10:00:00",
+        )
+        assert info.squashfs_path == "/path/to/base.sqfs"
+        assert info.current_version == "uuid-aaaa"
+        assert info.workspace_name == "myworkspace"
 
 
 class TestWorkspaceManager:
-    """Test WorkspaceManager."""
+    """Test WorkspaceManager helper methods."""
 
     def test_manager_init(self):
         """Test manager initialization."""
         manager = WorkspaceManager()
-        assert manager.manifest_file == "manifest.json"
+        assert manager._generate_uuid() is not None
 
-    def test_update_manifest_new(self):
-        """Test updating a new manifest."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            manifest_path = Path(tmpdir) / "manifest.json"
-            manager = WorkspaceManager()
-            manager._update_manifest(manifest_path, "base.sqfs", "mounted")
+    def test_generate_uuid_format(self):
+        """Test UUID format (hex without dashes)."""
+        manager = WorkspaceManager()
+        uuid_str = manager._generate_uuid()
+        assert len(uuid_str) == 32  # UUID hex without dashes
+        assert "-" not in uuid_str
 
-            assert manifest_path.exists()
-            data = json.loads(manifest_path.read_text())
-            assert data["current"]["name"] == "base.sqfs"
-            assert data["current"]["status"] == "mounted"
+    def test_build_parent_chain_single(self):
+        """Test building parent chain for orphan delta."""
+        manager = WorkspaceManager()
+        delta = DeltaInfo(parent=None, tag="base", created_at="2026-01-01", description="initial")
+        manifest = Manifest(default_version="uuid-aaaa", deltas={"uuid-aaaa": delta})
+        chain = manager._build_parent_chain(manifest, "uuid-aaaa")
+        assert chain == ["uuid-aaaa"]
 
-    def test_update_manifest_existing(self):
-        """Test updating an existing manifest."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            manifest_path = Path(tmpdir) / "manifest.json"
-            # Create initial manifest
-            initial = Manifest(snapshots=[SnapshotEntry(name="v1.sqfs", description="first", created_at="2026-01-01")])
-            manifest_path.write_text(initial.model_dump_json(indent=2))
-
-            manager = WorkspaceManager()
-            manager._update_manifest(manifest_path, "v2.sqfs", "mounted")
-
-            data = json.loads(manifest_path.read_text())
-            assert data["current"]["name"] == "v2.sqfs"
-            assert len(data["snapshots"]) == 1  # Existing snapshots preserved
-
-    def test_add_snapshot(self):
-        """Test adding a snapshot entry."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            manifest_path = Path(tmpdir) / "manifest.json"
-            manager = WorkspaceManager()
-            manager._add_snapshot(manifest_path, "v1.sqfs", "first snapshot")
-
-            data = json.loads(manifest_path.read_text())
-            assert len(data["snapshots"]) == 1
-            assert data["snapshots"][0]["name"] == "v1.sqfs"
-            assert data["snapshots"][0]["description"] == "first snapshot"
-
-    def test_add_multiple_snapshots(self):
-        """Test adding multiple snapshots."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            manifest_path = Path(tmpdir) / "manifest.json"
-            manager = WorkspaceManager()
-
-            manager._add_snapshot(manifest_path, "v1.sqfs", "first")
-            manager._add_snapshot(manifest_path, "v2.sqfs", "second")
-
-            data = json.loads(manifest_path.read_text())
-            assert len(data["snapshots"]) == 2
-            assert data["snapshots"][0]["name"] == "v1.sqfs"
-            assert data["snapshots"][1]["name"] == "v2.sqfs"
-
-
-# ============================================================================
-# FUSE Integration Tests (require squashfuse, fuse-overlayfs, mksquashfs)
-# ============================================================================
+    def test_build_parent_chain_with_parent(self):
+        """Test building parent chain with parent link."""
+        manager = WorkspaceManager()
+        delta1 = DeltaInfo(parent=None, tag="base", created_at="2026-01-01", description="initial")
+        delta2 = DeltaInfo(parent="uuid-aaaa", tag="v1", created_at="2026-02-01", description="update")
+        delta3 = DeltaInfo(parent="uuid-bbbb", tag="v2", created_at="2026-03-01", description="update2")
+        manifest = Manifest(
+            default_version="uuid-cccc",
+            deltas={"uuid-aaaa": delta1, "uuid-bbbb": delta2, "uuid-cccc": delta3},
+        )
+        chain = manager._build_parent_chain(manifest, "uuid-cccc")
+        assert chain == ["uuid-cccc", "uuid-bbbb", "uuid-aaaa"]
 
 
 @pytest.mark.skipif(not FUSE_AVAILABLE, reason="FUSE tools not available")
@@ -151,12 +137,11 @@ class TestWorkspaceFUSE:
 
     @pytest.mark.asyncio
     async def test_create_squashfs(self):
-        """Test creating a SquashFS image from a directory."""
+        """Test creating initial squashfs."""
         with tempfile.TemporaryDirectory() as tmpdir:
             source_dir = Path(tmpdir) / "source"
             output_path = Path(tmpdir) / "base.sqfs"
 
-            # Create source directory with some files
             source_dir.mkdir()
             (source_dir / "AGENT.md").write_text("You are a helpful assistant.")
             tools_dir = source_dir / "tools"
@@ -164,96 +149,158 @@ class TestWorkspaceFUSE:
             (tools_dir / "test.py").write_text("async def run(): pass")
 
             manager = WorkspaceManager()
-            await manager.create(str(source_dir), str(output_path))
+            await manager.create(str(source_dir), str(output_path), tag="base", description="initial")
 
             assert output_path.exists()
             assert output_path.stat().st_size > 0
 
-            # Verify manifest was created
-            manifest_path = Path(tmpdir) / "manifest.json"
-            assert manifest_path.exists()
-
     @pytest.mark.asyncio
-    async def test_mount_and_unmount(self):
+    async def test_mount_and_umount(self):
         """Test mounting and unmounting a workspace."""
         with tempfile.TemporaryDirectory() as tmpdir:
             source_dir = Path(tmpdir) / "source"
             squashfs_path = Path(tmpdir) / "base.sqfs"
             workspace_dir = Path(tmpdir) / "workspace"
 
-            # Create source and squashfs
             source_dir.mkdir()
             (source_dir / "AGENT.md").write_text("Test agent")
-            tools_dir = source_dir / "tools"
-            tools_dir.mkdir()
-            (tools_dir / "echo.py").write_text("# echo tool")
 
             manager = WorkspaceManager()
-            await manager.create(str(source_dir), str(squashfs_path))
-
-            # Mount
+            await manager.create(str(source_dir), str(squashfs_path), tag="base")
             await manager.mount(str(squashfs_path), str(workspace_dir))
 
-            # Check workspace exists and has content
             assert workspace_dir.exists()
             assert (workspace_dir / "AGENT.md").exists()
             assert (workspace_dir / "AGENT.md").read_text() == "Test agent"
-            assert (workspace_dir / "tools" / "echo.py").exists()
 
-            # Unmount
-            await manager.unmount(str(workspace_dir))
+            await manager.umount(str(workspace_dir))
 
     @pytest.mark.asyncio
-    async def test_write_and_snapshot(self):
-        """Test writing to workspace and creating snapshot."""
+    async def test_write_and_snapshot_new_file(self):
+        """Test writing and creating snapshot to new file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             source_dir = Path(tmpdir) / "source"
             squashfs_path = Path(tmpdir) / "base.sqfs"
             workspace_dir = Path(tmpdir) / "workspace"
-            snapshot_path = Path(tmpdir) / "v1.sqfs"
+            snapshot_path = Path(tmpdir) / "v2.sqfs"
 
-            # Create source and squashfs
             source_dir.mkdir()
             (source_dir / "AGENT.md").write_text("Test agent")
 
             manager = WorkspaceManager()
-            await manager.create(str(source_dir), str(squashfs_path))
+            await manager.create(str(source_dir), str(squashfs_path), tag="base")
             await manager.mount(str(squashfs_path), str(workspace_dir))
 
-            # Write new content
-            (workspace_dir / "new_file.txt").write_text("This is new content")
-            tools_dir = workspace_dir / "tools"
-            tools_dir.mkdir()
-            (tools_dir / "new_tool.py").write_text("# new tool")
+            (workspace_dir / "new_file.txt").write_text("New content")
 
-            # Create snapshot
-            await manager.snapshot(str(workspace_dir), str(snapshot_path), "added new content")
+            await manager.snapshot(str(workspace_dir), str(snapshot_path), tag="v1", description="added file")
 
-            # Check snapshot exists
             assert snapshot_path.exists()
-            assert snapshot_path.stat().st_size > 0
 
-            # Unmount
-            await manager.unmount(str(workspace_dir))
+            await manager.umount(str(workspace_dir))
 
-            # Mount snapshot and verify changes
+            # Mount snapshot and verify complete view
             workspace2_dir = Path(tmpdir) / "workspace2"
             await manager.mount(str(snapshot_path), str(workspace2_dir))
 
+            assert (workspace2_dir / "AGENT.md").exists()
             assert (workspace2_dir / "new_file.txt").exists()
-            assert (workspace2_dir / "new_file.txt").read_text() == "This is new content"
-            assert (workspace2_dir / "tools" / "new_tool.py").exists()
+            assert (workspace2_dir / "new_file.txt").read_text() == "New content"
 
-            await manager.unmount(str(workspace2_dir))
+            await manager.umount(str(workspace2_dir))
+
+    @pytest.mark.asyncio
+    async def test_snapshot_overwrite_original(self):
+        """Test snapshot overwriting original file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_dir = Path(tmpdir) / "source"
+            squashfs_path = Path(tmpdir) / "base.sqfs"
+            workspace_dir = Path(tmpdir) / "workspace"
+
+            source_dir.mkdir()
+            (source_dir / "AGENT.md").write_text("Test agent")
+
+            manager = WorkspaceManager()
+            await manager.create(str(source_dir), str(squashfs_path), tag="base")
+            await manager.mount(str(squashfs_path), str(workspace_dir))
+
+            (workspace_dir / "file1.txt").write_text("Content 1")
+
+            # First snapshot (new file)
+            await manager.snapshot(str(workspace_dir), str(squashfs_path), tag="v1")
+            await manager.umount(str(workspace_dir))
+
+            # Mount and make more changes
+            await manager.mount(str(squashfs_path), str(workspace_dir))
+            assert (workspace_dir / "file1.txt").exists()
+
+            (workspace_dir / "file2.txt").write_text("Content 2")
+
+            # Second snapshot (overwrite)
+            await manager.snapshot(str(workspace_dir), tag="v2")
+            await manager.umount(str(workspace_dir))
+
+            # Mount and verify both files
+            await manager.mount(str(squashfs_path), str(workspace_dir))
+            assert (workspace_dir / "AGENT.md").exists()
+            assert (workspace_dir / "file1.txt").exists()
+            assert (workspace_dir / "file2.txt").exists()
+
+            await manager.umount(str(workspace_dir))
+
+    @pytest.mark.asyncio
+    async def test_mount_specific_version(self):
+        """Test mounting a specific version."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_dir = Path(tmpdir) / "source"
+            squashfs_path = Path(tmpdir) / "base.sqfs"
+            workspace_dir = Path(tmpdir) / "workspace"
+            v2_path = Path(tmpdir) / "v2.sqfs"
+
+            source_dir.mkdir()
+            (source_dir / "AGENT.md").write_text("Original")
+
+            manager = WorkspaceManager()
+            await manager.create(str(source_dir), str(squashfs_path), tag="base")
+            await manager.mount(str(squashfs_path), str(workspace_dir))
+
+            (workspace_dir / "AGENT.md").write_text("Modified")
+
+            await manager.snapshot(str(workspace_dir), str(v2_path), tag="v1")
+            await manager.umount(str(workspace_dir))
+
+            # Mount original version of v2.sqfs
+            # First we need to read the manifest to get the base UUID
+            import json
+
+            lower_tmp = Path(tmpdir) / "tmp_lower"
+            lower_tmp.mkdir()
+            await manager._mount_squashfs(str(v2_path), lower_tmp)
+            manifest = Manifest.model_validate(json.loads((lower_tmp / "manifest.json").read_text()))
+            base_uuid = [k for k, v in manifest.deltas.items() if v.parent is None][0]
+            await manager._unmount_fuse(lower_tmp)
+            lower_tmp.rmdir()
+
+            # Mount base version
+            await manager.mount(str(v2_path), str(workspace_dir), version=base_uuid)
+            assert (workspace_dir / "AGENT.md").read_text() == "Original"
+
+            await manager.umount(str(workspace_dir))
+
+            # Mount default version
+            await manager.mount(str(v2_path), str(workspace_dir))
+            assert (workspace_dir / "AGENT.md").read_text() == "Modified"
+
+            await manager.umount(str(workspace_dir))
 
     @pytest.mark.asyncio
     async def test_mount_nonexistent_squashfs(self):
-        """Test mounting a nonexistent SquashFS fails."""
+        """Test mounting nonexistent squashfs fails."""
         with tempfile.TemporaryDirectory() as tmpdir:
             workspace_dir = Path(tmpdir) / "workspace"
             manager = WorkspaceManager()
 
-            with pytest.raises(RuntimeError):
+            with pytest.raises(RuntimeError, match="Squashfs not found"):
                 await manager.mount(str(Path(tmpdir) / "nonexistent.sqfs"), str(workspace_dir))
 
     @pytest.mark.asyncio
@@ -262,59 +309,12 @@ class TestWorkspaceFUSE:
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = WorkspaceManager()
 
-            with pytest.raises(RuntimeError):
+            with pytest.raises(RuntimeError, match="Source directory not found"):
                 await manager.create(str(Path(tmpdir) / "nonexistent"), str(Path(tmpdir) / "out.sqfs"))
 
     @pytest.mark.asyncio
     async def test_snapshot_without_changes(self):
-        """Test snapshot when no changes exist (upper_dir missing)."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create a fake workspace structure without upper_dir
-            workspace_dir = Path(tmpdir) / "workspace"
-            workspace_dir.mkdir()
-            snapshot_path = Path(tmpdir) / "empty.sqfs"
-
-            manager = WorkspaceManager()
-            # Should return early without creating snapshot
-            await manager.snapshot(str(workspace_dir), str(snapshot_path))
-
-            # Snapshot should not exist
-            assert not snapshot_path.exists()
-
-    def test_list_snapshots_empty(self, capsys):
-        """Test listing snapshots when manifest doesn't exist."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workspace_dir = Path(tmpdir) / "workspace"
-            workspace_dir.mkdir()
-
-            manager = WorkspaceManager()
-            manager.list_snapshots(str(workspace_dir))
-
-            captured = capsys.readouterr()
-            assert "No snapshots found" in captured.out
-
-    def test_list_snapshots_with_entries(self, capsys):
-        """Test listing snapshots with entries."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workspace_dir = Path(tmpdir) / "workspace"
-            workspace_dir.mkdir()
-
-            manifest_path = Path(tmpdir) / "manifest.json"
-            manager = WorkspaceManager()
-            manager._add_snapshot(manifest_path, "v1.sqfs", "first snapshot")
-            manager._add_snapshot(manifest_path, "v2.sqfs", "second snapshot")
-
-            manager.list_snapshots(str(workspace_dir))
-
-            captured = capsys.readouterr()
-            assert "v1.sqfs" in captured.out
-            assert "v2.sqfs" in captured.out
-            assert "first snapshot" in captured.out
-            assert "second snapshot" in captured.out
-
-    @pytest.mark.asyncio
-    async def test_unmount_without_lower(self):
-        """Test unmount when lower_dir doesn't exist."""
+        """Test snapshot when no changes exist."""
         with tempfile.TemporaryDirectory() as tmpdir:
             source_dir = Path(tmpdir) / "source"
             squashfs_path = Path(tmpdir) / "base.sqfs"
@@ -327,8 +327,10 @@ class TestWorkspaceFUSE:
             await manager.create(str(source_dir), str(squashfs_path))
             await manager.mount(str(squashfs_path), str(workspace_dir))
 
-            # Unmount should work even if lower_dir check fails
-            await manager.unmount(str(workspace_dir))
+            # Snapshot without changes should return early
+            await manager.snapshot(str(workspace_dir))
+
+            await manager.umount(str(workspace_dir))
 
 
 @pytest.mark.skipif(not FUSE_AVAILABLE, reason="FUSE tools not available")
@@ -347,14 +349,14 @@ class TestRunFunctions:
             source_dir.mkdir()
             (source_dir / "AGENT.md").write_text("Test")
 
-            await run_create(str(source_dir), str(output_path), "initial", log_level="ERROR")
+            await run_create(str(source_dir), str(output_path), tag="base", log_level="ERROR")
 
             assert output_path.exists()
 
     @pytest.mark.asyncio
-    async def test_run_mount_unmount(self):
-        """Test run_mount and run_unmount functions."""
-        from psi_workspace import run_mount, run_unmount
+    async def test_run_mount_umount(self):
+        """Test run_mount and run_umount functions."""
+        from psi_workspace import run_create, run_mount, run_umount
 
         with tempfile.TemporaryDirectory() as tmpdir:
             source_dir = Path(tmpdir) / "source"
@@ -364,22 +366,15 @@ class TestRunFunctions:
             source_dir.mkdir()
             (source_dir / "AGENT.md").write_text("Test")
 
-            # First create
-            from psi_workspace import run_create
-
-            await run_create(str(source_dir), str(squashfs_path))
-
-            # Mount
+            await run_create(str(source_dir), str(squashfs_path), log_level="ERROR")
             await run_mount(str(squashfs_path), str(workspace_dir), log_level="ERROR")
             assert (workspace_dir / "AGENT.md").exists()
-
-            # Unmount
-            await run_unmount(str(workspace_dir), log_level="ERROR")
+            await run_umount(str(workspace_dir), log_level="ERROR")
 
     @pytest.mark.asyncio
     async def test_run_snapshot(self):
         """Test run_snapshot function."""
-        from psi_workspace import run_create, run_mount, run_snapshot, run_unmount
+        from psi_workspace import run_create, run_mount, run_snapshot, run_umount
 
         with tempfile.TemporaryDirectory() as tmpdir:
             source_dir = Path(tmpdir) / "source"
@@ -390,33 +385,12 @@ class TestRunFunctions:
             source_dir.mkdir()
             (source_dir / "AGENT.md").write_text("Test")
 
-            await run_create(str(source_dir), str(squashfs_path))
-            await run_mount(str(squashfs_path), str(workspace_dir))
+            await run_create(str(source_dir), str(squashfs_path), log_level="ERROR")
+            await run_mount(str(squashfs_path), str(workspace_dir), log_level="ERROR")
 
-            # Write change
             (workspace_dir / "new.txt").write_text("new content")
 
-            await run_snapshot(str(workspace_dir), str(snapshot_path), "changes", log_level="ERROR")
+            await run_snapshot(str(workspace_dir), str(snapshot_path), tag="v1", log_level="ERROR")
             assert snapshot_path.exists()
 
-            await run_unmount(str(workspace_dir))
-
-    def test_run_list(self, capsys):
-        """Test run_list function."""
-        from psi_workspace import run_list
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            workspace_dir = Path(tmpdir) / "workspace"
-            workspace_dir.mkdir()
-
-            # Create manifest
-            from psi_workspace import WorkspaceManager
-
-            manager = WorkspaceManager()
-            manifest_path = Path(tmpdir) / "manifest.json"
-            manager._add_snapshot(manifest_path, "v1.sqfs", "test")
-
-            run_list(str(workspace_dir), log_level="ERROR")
-
-            captured = capsys.readouterr()
-            assert "v1.sqfs" in captured.out
+            await run_umount(str(workspace_dir), log_level="ERROR")
