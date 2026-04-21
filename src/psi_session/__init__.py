@@ -39,8 +39,7 @@ def _is_valid_tool_call_name(name: Any) -> bool:
 def _load_python_module(path: Path, module_name: str) -> Any:
     """Load a Python module from file path."""
     spec = importlib.util.spec_from_file_location(module_name, path)
-    if not spec or not spec.loader:
-        return None
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -139,7 +138,7 @@ class Session:
 
         for tool_file in tools_dir.glob("*.py"):
             module = _load_python_module(tool_file, tool_file.stem)
-            if module and hasattr(module, "run"):
+            if hasattr(module, "run"):
                 self._tools[tool_file.stem] = module.run
                 self._tools_schema.append(self._generate_tool_schema(tool_file.stem, module.run))
                 logger.debug(f"Tool loaded | name={tool_file.stem}")
