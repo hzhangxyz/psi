@@ -3,7 +3,6 @@
 import asyncio
 import json
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -181,12 +180,7 @@ class CliArgs:
 def main() -> None:
     args = tyro.cli(CliArgs)
 
-    api_key = args.api_key or os.environ.get("API_KEY")
-    if not api_key:
-        _setup_logger(args.log_level)
-        logger.error("API key required via --api-key or API_KEY env var")
-        print("Error: API key required via --api-key or API_KEY env var", file=sys.stderr)
-        sys.exit(1)
+    api_key = args.api_key or os.environ.get("API_KEY") or ""
 
     asyncio.run(
         run_ai(

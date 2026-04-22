@@ -16,7 +16,7 @@ import tyro
 from loguru import logger
 from pydantic import BaseModel
 
-from psi_agent.common import LLMRequest, ToolResult
+from psi_agent.common import AssistantMessage, LLMRequest, ToolResult
 
 
 class SessionConfig(BaseModel):
@@ -304,6 +304,7 @@ class Session:
         """Read streaming response and return final message."""
         final_message: dict[str, Any] = {"role": "assistant", "content": ""}
         tool_calls: list[dict[str, Any]] = []
+        received_done = False
 
         while True:
             data = await reader.readline()
@@ -311,6 +312,7 @@ class Session:
                 break
             response = json.loads(data.decode())
             if response.get("done"):
+                received_done = True
                 break
 
             delta = response["choices"][0]["delta"]
@@ -337,6 +339,9 @@ class Session:
 
         writer.close()
         await writer.wait_closed()
+
+        if not received_done:
+            raise RuntimeError("AI caller disconnected without sending done marker")
 
         valid_calls = [tc for tc in tool_calls if _is_valid_tool_call_name(tc.get("function", {}).get("name"))]
         if valid_calls:
@@ -417,8 +422,8 @@ class Session:
             user_message = json.loads(data.decode())
             if user_message.get("role") == "user":
                 response_text = await self.run_react_loop(user_message)
-                response = {"role": "assistant", "content": response_text}
-                writer.write((json.dumps(response) + "\n").encode())
+                response = AssistantMessage(content=response_text)
+                writer.write((response.model_dump_json() + "\n").encode())
                 await writer.drain()
 
         writer.close()

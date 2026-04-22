@@ -62,10 +62,43 @@ Session 接收用户消息后：
 
 ## 设计原则
 
-- **Let it crash**: 除了网络故障，所有错误都应该让进程 crash
-  - 外部网络故障（可优雅处理）：用户连接断开、LLM API 连接问题
-  - 组件间连接（应该 crash）：psi_agent.session <-> psi_agent.ai、psi_agent.channel <-> psi_agent.session 之间的连接应该假设正常工作，出问题就 crash
-  - 其他错误（应该 crash）：JSON 解析错误、API 错误、业务逻辑错误
+### Let it Crash
+
+核心原则：**除了外部网络故障，所有错误都应该让进程 crash**。
+
+**分类说明:**
+
+| 类型 | 处理方式 | 示例 |
+|------|----------|------|
+| 外部用户连接断开 | 优雅处理 | Channel断开（用户Ctrl+C/Ctrl+D） |
+| 外部LLM API问题 | 优雅处理或crash | API超时、认证错误（让OpenAI SDK报错） |
+| 组件间连接异常 | **crash** | AI Caller断开（未发送done）、Session断开 |
+| 配置错误 | **crash** | API key缺失、文件不存在、参数无效 |
+| 数据错误 | **crash** | JSON解析失败、schema不匹配 |
+| 业务逻辑错误 | **crash** | 工具不存在、版本链断裂 |
+
+**具体规则:**
+
+1. **启动时配置错误**: 不要额外检查，让系统自然crash并给出错误信息
+   - 例：API key缺失 → 让OpenAI SDK初始化时报错，不要提前检查并sys.exit()
+   
+2. **组件间连接**: 假设连接正常，异常时直接crash
+   - 例：AI Caller发送流式响应但未发送`done`标记就断开 → Session应该crash（`RuntimeError`）
+   
+3. **工具执行错误**: **不crash**，返回错误给LLM
+   - 工具级别错误（如命令不存在）应返回`{"success": False, "error": "..."}`
+   - Session继续运行，让LLM决定下一步
+   
+4. **用户主动退出**: **优雅处理**
+   - KeyboardInterrupt/EOFError → 打印退出信息，清理资源，退出
+   
+5. **可选功能缺失**: 优雅处理（warning/return），不crash
+   - tools目录不存在 → warning并继续
+   - skills目录不存在 → warning并继续
+   - snapshot无改动 → warning并return
+   
+### 其他原则
+
 - **绿色可移植**: workspace 可整体复制/移动
 - **组件化**: 独立进程，socket 通信
 - **不考虑兼容性**: 目前是第一版，不需要向后兼容，可直接删除旧代码
@@ -212,6 +245,10 @@ run_list("./workspace")
 - **参数命名一致**: 内部变量名与参数名保持一致（如 `source_dir` → `source_dir`，不要改成 `source`）
 - **数据模型统一**: 同一模块内的相似操作应使用相同的数据模型（如 `_handle_stream` 和 `_handle_non_stream` 都用 `LLMRequest` 对象）
 - **传递对象而非字段**: 内部方法应传递完整的 request/response 对象，而非逐个提取字段传递（避免 adhoc 参数列表）
+- **接口简洁**: 
+  - 数据处理放在调用方而非被调用方（如JSON序列化在发送方完成）
+  - 类型转换尽量靠近数据源（如Path转换在参数入口处完成）
+- **避免过度封装**: 简单逻辑不需要额外抽象，三行重复代码比过早抽象更好
 
 ### 代码组织
 
