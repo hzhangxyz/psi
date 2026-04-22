@@ -1,6 +1,6 @@
 [project]
 name = "psi-agent"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Psi Agent Platform - portable, composable AI agents"
 requires-python = ">=3.10"
 dependencies = [
@@ -31,8 +31,12 @@ psi-workspace-umount = "psi_agent.workspace:main_umount"
 psi-workspace-snapshot = "psi_agent.workspace:main_snapshot"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { local_scheme = "no-local-version" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/psi_agent"]
