@@ -71,7 +71,7 @@ export OPENAI_MODEL="gpt-4o-mini"
 uv run pytest tests/integration/ -v
 ```
 
-**CI/CD:** GitHub Actions 自动运行 lint、类型检查和单元测试。集成测试需要配置 GitHub Secrets（`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`）。
+**CI/CD:** GitHub Actions 自动运行 lint、类型检查和单元测试（`.github/workflows/ci.yml`）。集成测试需要配置 GitHub Secrets（`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`）。tag 发布时自动发布到 PyPI（使用 Trusted Publishing）。
 
 ## 快速开始
 
@@ -159,6 +159,19 @@ workspace/
 └── systems/builder.py # 系统提示词构造器
 ```
 
+## 版本管理
+
+使用 **hatch-vcs** 从 git tag 动态生成版本号：
+- 无 tag 时：`0.1.devN`（N 为 commit 数）
+- 有 tag 时：使用 tag 版本（如 `v0.1.0` → `0.1.0`）
+
+发布流程：
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+# → CI 运行测试 → 测试通过 → 发布到 PyPI
+```
+
 ## 文档
 
 - [SPEC.md](SPEC.md) - 详细规格说明书
@@ -166,4 +179,4 @@ workspace/
 
 ## License
 
-AGPLv3
+AGPL-3.0-or-later

@@ -134,6 +134,19 @@ Session 默认使用自动生成的 uuid 作为 session_id，因此：
 
 这是为了让"默认行为无历史"更符合直觉。
 
+## 版本管理
+
+使用 **hatch-vcs** 从 git tag 动态生成版本号：
+- 无 tag 时：`0.1.devN`（N 为 commit 数）
+- 有 tag 时：使用 tag 版本（如 `v0.1.0` → `0.1.0`）
+
+发布流程：
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+# → CI 运行测试 → 测试通过 → 发布到 PyPI
+```
+
 ## 开发
 
 本仓库使用 **ruff** (lint/格式化) 和 **ty** (类型检查) 进行代码质量控制。
@@ -159,7 +172,7 @@ export OPENAI_MODEL="gpt-4o-mini"
 uv run pytest tests/integration/ -v
 ```
 
-**CI/CD**: GitHub Actions 自动运行 ruff check、ruff format、ty 和测试（`.github/workflows/test.yml`）。
+**CI/CD**: GitHub Actions 自动运行 ruff check、ruff format、ty 和测试（`.github/workflows/ci.yml`）。创建 tag (`v*`) 时自动发布到 PyPI（使用 Trusted Publishing）。
 
 **CLI**: 所有命令使用 tyro 实现，参数通过 dataclass 定义。
 

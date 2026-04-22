@@ -445,9 +445,26 @@ tests/
 - `OPENAI_BASE_URL`: API endpoint（可选，默认 OpenAI）
 - `OPENAI_MODEL`: 模型名称（可选，默认 gpt-4o-mini）
 
-GitHub Actions 自动测试配置见 `.github/workflows/test.yml`，在 push 和 PR 时自动运行 lint、类型检查和单元测试。集成测试需要配置 GitHub Secrets（`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`）。
+GitHub Actions 自动测试配置见 `.github/workflows/ci.yml`，在 push 和 PR 时自动运行 lint、类型检查和单元测试。集成测试需要配置 GitHub Secrets（`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`）。创建 tag (`v*`) 时自动发布到 PyPI（使用 Trusted Publishing）。
 
-## 15. 代码质量
+## 15. 版本管理
+
+使用 **hatch-vcs** 从 git tag 动态生成版本号：
+- 无 tag 时：`0.1.devN`（N 为距基准版本的 commit 数）
+- 有 tag 时：使用 tag 版本（如 `v0.1.0` → `0.1.0`）
+
+发布流程：
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+# → CI 运行 lint/unit/integration 测试 → 测试通过 → 发布到 PyPI
+```
+
+PyPI 发布使用 **Trusted Publishing**（OIDC），无需配置 API token：
+- GitHub environment: `pypi`
+- 在 PyPI 项目设置中配置 trusted publisher
+
+## 16. 代码质量
 
 本仓库使用 **ruff** 进行 lint 和格式化，**ty** 进行类型检查。
 
@@ -467,7 +484,7 @@ uv run ty check examples/ tests/ src/
 
 配置见 `pyproject.toml`。
 
-## 16. CLI 实现
+## 17. CLI 实现
 
 所有 CLI 使用 tyro 实现，参数通过 dataclass 定义：
 
@@ -487,7 +504,7 @@ def main() -> None:
     ...
 ```
 
-## 17. 依赖
+## 18. 依赖
 
 运行依赖：
 - Python 3.10+
@@ -515,7 +532,7 @@ sudo apt install squashfuse fuse-overlayfs squashfs-tools
 - pytest-asyncio（异步测试）
 - pytest-cov（覆盖率）
 
-## 18. 命名风格
+## 19. 命名风格
 
 ### CLI 参数
 
@@ -553,7 +570,7 @@ sudo apt install squashfuse fuse-overlayfs squashfs-tools
 - 类：PascalCase（如 `Session`, `SessionConfig`）
 - Pydantic model：PascalCase（如 `LLMRequest`, `ToolResult`）
 
-## 19. 设计原则
+## 20. 设计原则
 
 ### Let it Crash
 
