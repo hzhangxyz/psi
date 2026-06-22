@@ -7,12 +7,12 @@ license = "AGPL-3.0-or-later"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "openai>=1.0.0",
+    "openai>=2.43.0",
     "aiosqlite>=0.19.0",
     "prompt-toolkit>=3.0.0",
     "loguru>=0.7.0",
-    "pydantic>=2.0.0",
-    "tyro>=0.8.0",
+    "pydantic>=2.13.4",
+    "tyro>=1.0.15",
 ]
 
 [project.urls]
@@ -23,10 +23,10 @@ Documentation = "https://github.com/hzhangxyz/psi#readme"
 
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.1.0",
-    "ty>=0.0.31",
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0",
+    "ruff>=0.15.18",
+    "ty>=0.0.51",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
 ]
 
